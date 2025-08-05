@@ -1,0 +1,2 @@
+net stop NIHardwareService
+net stop NIHostIntegrationAgent
