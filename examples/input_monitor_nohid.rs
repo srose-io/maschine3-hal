@@ -1,4 +1,4 @@
-use mk3_hal::{InputState, MK3Error, MaschineMK3, MaschineMK3Hid, PadState};
+use mk3_hal::{InputState, MK3Error, MaschineMK3, PadState};
 use std::time::Duration;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

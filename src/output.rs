@@ -35,6 +35,164 @@ impl RgbColor {
     }
 }
 
+/// Maschine MK3 color mapping based on the hardware color palette
+#[derive(Default, Debug, Clone, Copy, PartialEq)]
+pub struct MaschineLEDColor {
+    pub index: u8,    // 0-16 color index
+    pub bright: bool, // true for bright, false for dim
+}
+
+impl MaschineLEDColor {
+    /// Standard Maschine color palette (17 colors from the grid)
+    const PALETTE: [(u8, u8, u8); 17] = [
+        (255, 0, 0),     // 0: Red
+        (255, 165, 0),   // 1: Orange
+        (255, 200, 0),   // 2: Orange-yellow
+        (255, 255, 0),   // 3: Yellow
+        (128, 255, 0),   // 4: Yellow-green
+        (0, 255, 0),     // 5: Green
+        (0, 255, 128),   // 6: Cyan-green
+        (0, 255, 255),   // 7: Cyan
+        (0, 128, 255),   // 8: Light blue
+        (0, 0, 255),     // 9: Blue
+        (128, 0, 255),   // 10: Purple
+        (255, 0, 255),   // 11: Magenta
+        (255, 0, 128),   // 12: Pink
+        (255, 128, 255), // 13: Hot pink
+        (64, 0, 128),    // 14: Dark purple
+        (128, 128, 128), // 15: Gray
+        (255, 255, 255), // 16: White
+    ];
+
+    pub fn from_rgb_color(color: RgbColor) -> Self {
+        Self::from_rgb(color.r, color.g, color.b)
+    }
+
+    /// Create a new MaschineColor from RGB values
+    /// Maps to the nearest color in the palette and determines brightness
+    pub fn from_rgb(r: u8, g: u8, b: u8) -> Self {
+        // Handle black/off case
+        if r == 0 && g == 0 && b == 0 {
+            return MaschineLEDColor {
+                index: 0,
+                bright: false,
+            };
+        }
+
+        // Find the closest color in the palette using Euclidean distance
+        let mut best_distance = f32::MAX;
+        let mut best_index = 0;
+
+        for (index, &(pr, pg, pb)) in Self::PALETTE.iter().enumerate() {
+            let distance = ((r as f32 - pr as f32).powi(2)
+                + (g as f32 - pg as f32).powi(2)
+                + (b as f32 - pb as f32).powi(2))
+            .sqrt();
+
+            if distance < best_distance {
+                best_distance = distance;
+                best_index = index;
+            }
+        }
+
+        // Determine brightness based on the maximum RGB component rather than luminance
+        // This ensures pure colors like red, green, blue are bright
+        let max_component = r.max(g).max(b);
+        let bright = max_component > 127;
+
+        MaschineLEDColor {
+            index: best_index as u8,
+            bright,
+        }
+    }
+
+    /// Create a MaschineColor with specific color index and brightness
+    pub fn new(index: u8, bright: bool) -> Self {
+        MaschineLEDColor {
+            index: index.min(16), // Clamp to valid range (0-16)
+            bright,
+        }
+    }
+
+    /// Convert to the actual LED value using the Maschine mapping formula
+    /// Port of the C# code for converting index + brightness to LED value
+    pub fn to_led_value(&self) -> u8 {
+        // Special case: black/off
+        if self.index == 0 && !self.bright {
+            return 0;
+        }
+
+        let mut basecolor = (self.index % 17) + 1;
+        basecolor *= 2;
+        let adjusted = basecolor - if !self.bright { 1 } else { 0 };
+
+        let mut result = adjusted * 2 + 2;
+
+        if result > 66 {
+            result += 4;
+        }
+
+        result as u8
+    }
+
+    /// Predefined colors for common use
+    pub fn red(bright: bool) -> Self {
+        Self::new(0, bright)
+    }
+    pub fn orange(bright: bool) -> Self {
+        Self::new(1, bright)
+    }
+    pub fn yellow(bright: bool) -> Self {
+        Self::new(3, bright)
+    }
+    pub fn green(bright: bool) -> Self {
+        Self::new(5, bright)
+    }
+    pub fn cyan(bright: bool) -> Self {
+        Self::new(7, bright)
+    }
+    pub fn blue(bright: bool) -> Self {
+        Self::new(9, bright)
+    }
+    pub fn purple(bright: bool) -> Self {
+        Self::new(10, bright)
+    }
+    pub fn magenta(bright: bool) -> Self {
+        Self::new(11, bright)
+    }
+    pub fn pink(bright: bool) -> Self {
+        Self::new(12, bright)
+    }
+    pub fn white(bright: bool) -> Self {
+        Self::new(16, bright)
+    }
+    pub fn black() -> Self {
+        Self::new(0, false)
+    }
+
+    /// Get RGB values for this Maschine color (for preview/debugging)
+    pub fn to_rgb(&self) -> (u8, u8, u8) {
+        // Special case: black/off
+        if self.index == 0 && !self.bright {
+            return (0, 0, 0);
+        }
+
+        let (r, g, b) = Self::PALETTE[self.index as usize % 17];
+        if self.bright {
+            (r, g, b)
+        } else {
+            // Dim version - reduce brightness by ~50%
+            (r / 2, g / 2, b / 2)
+        }
+    }
+}
+
+impl From<RgbColor> for MaschineLEDColor {
+    fn from(rgb: RgbColor) -> Self {
+        Self::from_rgb(rgb.r, rgb.g, rgb.b)
+    }
+}
+
 /// State of all button LEDs (Type 0x80 packet)
 #[derive(Debug, Clone, Default)]
 pub struct ButtonLedState {
@@ -89,26 +247,26 @@ pub struct ButtonLedState {
     pub mute: LedBrightness,
 
     // RGB LEDs
-    pub browser_plugin: RgbColor,
-    pub group_a: RgbColor,
-    pub group_b: RgbColor,
-    pub group_c: RgbColor,
-    pub group_d: RgbColor,
-    pub group_e: RgbColor,
-    pub group_f: RgbColor,
-    pub group_g: RgbColor,
-    pub group_h: RgbColor,
-    pub nav_up: RgbColor,
-    pub nav_left: RgbColor,
-    pub nav_right: RgbColor,
-    pub nav_down: RgbColor,
+    pub browser_plugin: MaschineLEDColor,
+    pub group_a: MaschineLEDColor,
+    pub group_b: MaschineLEDColor,
+    pub group_c: MaschineLEDColor,
+    pub group_d: MaschineLEDColor,
+    pub group_e: MaschineLEDColor,
+    pub group_f: MaschineLEDColor,
+    pub group_g: MaschineLEDColor,
+    pub group_h: MaschineLEDColor,
+    pub nav_up: MaschineLEDColor,
+    pub nav_left: MaschineLEDColor,
+    pub nav_right: MaschineLEDColor,
+    pub nav_down: MaschineLEDColor,
 }
 
 /// State of pad and touch strip LEDs (Type 0x81 packet)
 #[derive(Debug, Clone, Default)]
 pub struct PadLedState {
-    pub touch_strip_leds: [RgbColor; 25], // 25 RGB LEDs on touch strip
-    pub pad_leds: [RgbColor; 16],         // 16 RGB pad LEDs
+    pub touch_strip_leds: [MaschineLEDColor; 25], // 25 RGB LEDs on touch strip
+    pub pad_leds: [MaschineLEDColor; 16],         // 16 RGB pad LEDs
 }
 
 impl ButtonLedState {
@@ -122,7 +280,7 @@ impl ButtonLedState {
         packet[2] = self.plugin_instance;
         packet[3] = self.arranger;
         packet[4] = self.mixer;
-        packet[5] = self.browser_plugin.r; // RGB LED - using only red for now
+        packet[5] = self.browser_plugin.to_led_value(); // RGB LED - using only red for now
         packet[6] = self.sampler;
         packet[7] = self.arrow_left;
         packet[8] = self.arrow_right;
@@ -148,14 +306,14 @@ impl ButtonLedState {
         packet[28] = self.notes;
 
         // Group RGB LEDs (simplified - need proper RGB mapping)
-        packet[29] = self.group_a.r;
-        packet[30] = self.group_b.r;
-        packet[31] = self.group_c.r;
-        packet[32] = self.group_d.r;
-        packet[33] = self.group_e.r;
-        packet[34] = self.group_f.r;
-        packet[35] = self.group_g.r;
-        packet[36] = self.group_h.r;
+        packet[29] = self.group_a.to_led_value();
+        packet[30] = self.group_b.to_led_value();
+        packet[31] = self.group_c.to_led_value();
+        packet[32] = self.group_d.to_led_value();
+        packet[33] = self.group_e.to_led_value();
+        packet[34] = self.group_f.to_led_value();
+        packet[35] = self.group_g.to_led_value();
+        packet[36] = self.group_h.to_led_value();
 
         packet[37] = self.restart;
         packet[38] = self.erase;
@@ -180,10 +338,10 @@ impl ButtonLedState {
         packet[57] = self.mute;
 
         // Navigation RGB LEDs
-        packet[58] = self.nav_up.r;
-        packet[59] = self.nav_left.r;
-        packet[60] = self.nav_right.r;
-        packet[61] = self.nav_down.r;
+        packet[58] = self.nav_up.to_led_value();
+        packet[59] = self.nav_left.to_led_value();
+        packet[60] = self.nav_right.to_led_value();
+        packet[61] = self.nav_down.to_led_value();
 
         packet
     }
@@ -198,14 +356,14 @@ impl PadLedState {
         // Touch strip LEDs (25 RGB, bytes 1-26, simplified to single byte per LED)
         for (i, led) in self.touch_strip_leds.iter().enumerate() {
             if i + 1 < packet.len() {
-                packet[i + 1] = led.r; // Simplified - should be proper RGB encoding
+                packet[i + 1] = led.to_led_value();
             }
         }
 
         // Pad LEDs (16 RGB, bytes 27-42, simplified to single byte per LED)
         for (i, led) in self.pad_leds.iter().enumerate() {
-            if i + 27 < packet.len() {
-                packet[i + 27] = led.r; // Simplified - should be proper RGB encoding
+            if i + 26 < packet.len() {
+                packet[i + 26] = led.to_led_value();
             }
         }
 
@@ -213,63 +371,73 @@ impl PadLedState {
     }
 }
 
-/// RGB565 pixel format for displays
+/// RGB565X pixel format for displays (CORRECTED)
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Rgb565 {
     pub value: u16,
 }
 
 impl Rgb565 {
-pub fn new(r: u8, g: u8, b: u8) -> Self {
-let r5 = (r >> 3) as u16;
-let g6 = (g >> 2) as u16;
-let b5 = (b >> 3) as u16;
-Self {
-value: (r5 << 11) | (g6 << 5) | b5,
-}
-}
+    /// Convert RGB color to MK3's custom RGB565X format with channel rotation
+    pub fn new(r: u8, g: u8, b: u8) -> Self {
+        // Apply MK3 channel rotation: RED→BLUE, GREEN→RED, BLUE→GREEN
+        let corrected_r = b; // Red channel gets blue input
+        let corrected_g = r; // Green channel gets red input  
+        let corrected_b = g; // Blue channel gets green input
 
-pub fn from_rgb(color: RgbColor) -> Self {
-Self::new(color.r, color.g, color.b)
-}
+        // Pack as: GGGB BBBB RRRR RGGG
+        let r4 = (corrected_r >> 4) as u16; // Red high: 4 bits  
+        let r1 = (corrected_r >> 3) & 0x1; // Red low: 1 bit
+        let b5 = (corrected_b >> 3) as u16; // Blue: 5 bits
+        let g_high = (corrected_g >> 5) as u16; // Green high: 3 bits
+        let g_low = (corrected_g >> 3) & 0x7; // Green low: 3 bits
 
-pub fn black() -> Self {
-Self::new(0, 0, 0)
-}
+        Self {
+            value: (g_high << 13) | (b5 << 8) | (r4 << 4) | ((r1 as u16) << 3) | (g_low as u16),
+        }
+    }
 
-pub fn white() -> Self {
-Self::new(255, 255, 255)
-}
+    pub fn from_rgb(color: RgbColor) -> Self {
+        Self::new(color.r, color.g, color.b)
+    }
 
-pub fn red() -> Self {
-Self::new(255, 0, 0)
-}
+    pub fn black() -> Self {
+        Self::new(0, 0, 0)
+    }
 
-pub fn green() -> Self {
-Self::new(0, 255, 0)
-}
+    pub fn white() -> Self {
+        Self::new(255, 255, 255)
+    }
 
-pub fn blue() -> Self {
-Self::new(0, 0, 255)
-}
-    
+    pub fn red() -> Self {
+        Self::new(255, 0, 0)
+    }
+
+    pub fn green() -> Self {
+        Self::new(0, 255, 0)
+    }
+
+    pub fn blue() -> Self {
+        Self::new(0, 0, 255)
+    }
+
     pub fn yellow() -> Self {
         Self::new(255, 255, 0)
     }
-    
+
     pub fn magenta() -> Self {
         Self::new(255, 0, 255)
     }
-    
+
     pub fn cyan() -> Self {
         Self::new(0, 255, 255)
     }
-    
+
     pub fn from_hsv(h: f32, s: f32, v: f32) -> Self {
         let c = v * s;
         let x = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
         let m = v - c;
-        
+
         let (r, g, b) = if h < 60.0 {
             (c, x, 0.0)
         } else if h < 120.0 {
@@ -283,7 +451,7 @@ Self::new(0, 0, 255)
         } else {
             (c, 0.0, x)
         };
-        
+
         Self::new(
             ((r + m) * 255.0) as u8,
             ((g + m) * 255.0) as u8,
@@ -299,7 +467,7 @@ impl DisplayGraphics {
     /// Create a gradient pattern
     pub fn gradient(width: u16, height: u16, color1: Rgb565, color2: Rgb565) -> Vec<Rgb565> {
         let mut pixels = Vec::with_capacity((width * height) as usize);
-        
+
         for y in 0..height {
             let ratio = y as f32 / height as f32;
             let color = Self::lerp_color(color1, color2, ratio);
@@ -307,14 +475,14 @@ impl DisplayGraphics {
                 pixels.push(color);
             }
         }
-        
+
         pixels
     }
-    
+
     /// Create a rainbow pattern
     pub fn rainbow(width: u16, height: u16) -> Vec<Rgb565> {
         let mut pixels = Vec::with_capacity((width * height) as usize);
-        
+
         for y in 0..height {
             for x in 0..width {
                 let hue = ((x as f32 / width as f32) * 360.0) % 360.0;
@@ -323,62 +491,73 @@ impl DisplayGraphics {
                 pixels.push(Rgb565::from_hsv(hue, sat, val));
             }
         }
-        
+
         pixels
     }
-    
+
     /// Create a checkerboard pattern
-    pub fn checkerboard(width: u16, height: u16, square_size: u16, color1: Rgb565, color2: Rgb565) -> Vec<Rgb565> {
+    pub fn checkerboard(
+        width: u16,
+        height: u16,
+        square_size: u16,
+        color1: Rgb565,
+        color2: Rgb565,
+    ) -> Vec<Rgb565> {
         let mut pixels = Vec::with_capacity((width * height) as usize);
-        
+
         for y in 0..height {
             for x in 0..width {
                 let checker_x = (x / square_size) % 2;
                 let checker_y = (y / square_size) % 2;
-                let color = if (checker_x + checker_y) % 2 == 0 { color1 } else { color2 };
+                let color = if (checker_x + checker_y) % 2 == 0 {
+                    color1
+                } else {
+                    color2
+                };
                 pixels.push(color);
             }
         }
-        
+
         pixels
     }
-    
+
     /// Create animated plasma effect
     pub fn plasma(width: u16, height: u16, time: f32) -> Vec<Rgb565> {
         let mut pixels = Vec::with_capacity((width * height) as usize);
-        
+
         for y in 0..height {
             for x in 0..width {
                 let fx = x as f32 / width as f32;
                 let fy = y as f32 / height as f32;
-                
+
                 let v1 = (fx * 10.0 + time).sin();
-                let v2 = ((fx * 8.0 + fy * 6.0 + time * 1.5).sin() + (fx * 4.0 + time * 2.0).cos()) / 2.0;
+                let v2 = ((fx * 8.0 + fy * 6.0 + time * 1.5).sin() + (fx * 4.0 + time * 2.0).cos())
+                    / 2.0;
                 let v3 = ((fx - 0.5).powi(2) + (fy - 0.5).powi(2)).sqrt() * 10.0 + time;
                 let v = (v1 + v2 + v3.sin()) / 3.0;
-                
+
                 let hue = ((v + 1.0) / 2.0 * 360.0) % 360.0;
                 pixels.push(Rgb565::from_hsv(hue, 1.0, 0.8));
             }
         }
-        
+
         pixels
     }
-    
+
     fn lerp_color(color1: Rgb565, color2: Rgb565, t: f32) -> Rgb565 {
         // Extract RGB components from RGB565
         let r1 = ((color1.value >> 11) & 0x1F) as f32 * 8.0;
         let g1 = ((color1.value >> 5) & 0x3F) as f32 * 4.0;
         let b1 = (color1.value & 0x1F) as f32 * 8.0;
-        
+
         let r2 = ((color2.value >> 11) & 0x1F) as f32 * 8.0;
         let g2 = ((color2.value >> 5) & 0x3F) as f32 * 4.0;
         let b2 = (color2.value & 0x1F) as f32 * 8.0;
-        
+
         let r = (r1 + (r2 - r1) * t) as u8;
         let g = (g1 + (g2 - g1) * t) as u8;
         let b = (b1 + (b2 - b1) * t) as u8;
-        
+
         Rgb565::new(r, g, b)
     }
 }
@@ -394,8 +573,8 @@ pub enum DisplayCommand {
         pixel2: Rgb565,
         count: u32,
     },
-    /// Unknown command (probably blit)
-    Unknown,
+    /// Blit command (0x03)
+    Blit,
     /// End of transmission
     EndTransmission,
 }
@@ -435,52 +614,45 @@ impl DisplayPacket {
         });
     }
 
+    pub fn add_blit(&mut self) {
+        self.commands.push(DisplayCommand::Blit);
+    }
+
     pub fn finish(&mut self) {
         self.commands.push(DisplayCommand::EndTransmission);
     }
 
-    /// Build the complete display packet
+    /// Create optimized full-screen packet (30 FPS capable)
+    pub fn full_screen_optimized(display_id: u8, pixels: Vec<Rgb565>) -> Self {
+        let mut packet = Self::new(display_id, 0, 0, 480, 272);
+        packet.add_pixels(pixels);
+        packet.add_blit();
+        packet.finish();
+        packet
+    }
+
+    /// Build the complete display packet (CORRECTED)
     pub fn to_packet(&self) -> Vec<u8> {
         let mut packet = Vec::new();
 
-        // Header Part 1 (16 bytes)
+        // Header (16 bytes total) - CORRECTED FORMAT
         packet.extend_from_slice(&[
             0x84,
-            0x00, // Header 1-2
+            0x00, // Packet type
             self.display_id,
-            0x00, // Header 3-4 (display selection)
-            0x60,
-            0x00, // Header 5-6
-            0x00,
-            0x00, // Header 7-8
-            0x00,
-            0x00, // Header 9-10
-            0x00,
-            0x00, // Header 11-12
-            0x00,
-            0x00, // Header 13-14
-            0x00,
-            0x00, // Header 15-16
-        ]);
-
-        // Header Part 2 (16 bytes) - coordinates and dimensions
-        packet.extend_from_slice(&[
-            (self.x_start >> 8) as u8,
-            (self.x_start & 0xFF) as u8,
-            (self.y_start >> 8) as u8,
-            (self.y_start & 0xFF) as u8,
-            (self.width >> 8) as u8,
-            (self.width & 0xFF) as u8,
-            (self.height >> 8) as u8,
-            (self.height & 0xFF) as u8,
+            0x60, // Display ID and constant
             0x00,
             0x00,
             0x00,
-            0x00, // Padding
-            0x00,
-            0x00,
-            0x00,
-            0x00, // Padding
+            0x00,                        // Reserved bytes 4-7
+            (self.x_start >> 8) as u8,   // X MSB
+            (self.x_start & 0xFF) as u8, // X LSB
+            (self.y_start >> 8) as u8,   // Y MSB
+            (self.y_start & 0xFF) as u8, // Y LSB
+            (self.width >> 8) as u8,     // Width MSB
+            (self.width & 0xFF) as u8,   // Width LSB
+            (self.height >> 8) as u8,    // Height MSB
+            (self.height & 0xFF) as u8,  // Height LSB
         ]);
 
         // Add commands
@@ -488,21 +660,19 @@ impl DisplayPacket {
             match command {
                 DisplayCommand::TransmitPixels { pixels } => {
                     let pixel_count = pixels.len() as u32;
+                    let half_pixels = pixel_count / 2; // CORRECTED: Device expects pixel_count / 2
                     packet.push(0x00); // Command code
-                    packet.push((pixel_count >> 16) as u8);
-                    packet.push((pixel_count >> 8) as u8);
-                    packet.push((pixel_count & 0xFF) as u8);
+                    packet.push((half_pixels >> 16) as u8);
+                    packet.push((half_pixels >> 8) as u8);
+                    packet.push((half_pixels & 0xFF) as u8);
 
-                    // Add pixel data
+                    // Add pixel data (little-endian)
                     for pixel in pixels {
-                        packet.push((pixel.value & 0xFF) as u8);
-                        packet.push((pixel.value >> 8) as u8);
+                        packet.push((pixel.value & 0xFF) as u8); // LSB first
+                        packet.push((pixel.value >> 8) as u8); // MSB second
                     }
 
-                    // Pad to 4-byte boundary
-                    while packet.len() % 4 != 0 {
-                        packet.push(0x00);
-                    }
+                    // No padding needed - data is already 2-byte aligned
                 }
                 DisplayCommand::RepeatPixels {
                     pixel1,
@@ -520,7 +690,7 @@ impl DisplayPacket {
                     packet.push((pixel2.value & 0xFF) as u8);
                     packet.push((pixel2.value >> 8) as u8);
                 }
-                DisplayCommand::Unknown => {
+                DisplayCommand::Blit => {
                     packet.extend_from_slice(&[0x03, 0x00, 0x00, 0x00]);
                 }
                 DisplayCommand::EndTransmission => {

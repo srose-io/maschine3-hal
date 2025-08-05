@@ -1,21 +1,26 @@
-use mk3_hal::{MaschineMK3, MaschineMK3Hid, MK3Error};
+use mk3_hal::{MK3Error, MaschineMK3};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Maschine MK3 HAL - Phase 1 Test");
     println!("⚠️  Make sure to close any NI software (Maschine, Traktor, etc.)");
-    
+
     println!("\n🔍 Trying HID API first (recommended for Windows)...");
-    match MaschineMK3Hid::new() {
+    match MaschineMK3::new() {
         Ok(device) => {
             println!("✅ Successfully connected via HID API!");
             println!("{}", device.device_info()?);
-            
+
             // Test basic input reading
             println!("\n🎛️  Testing input reading - press some buttons/knobs NOW...");
             for i in 0..50 {
-                match device.read_input_raw() {
+                match device.read_input() {
                     Ok(data) if !data.is_empty() => {
-                        println!("Input #{}: {} bytes - {:?}", i + 1, data.len(), &data[..std::cmp::min(8, data.len())]);
+                        println!(
+                            "Input #{}: {} bytes - {:?}",
+                            i + 1,
+                            data.len(),
+                            &data[..std::cmp::min(8, data.len())]
+                        );
                     }
                     Ok(_) => {
                         print!(".");
@@ -38,13 +43,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(device) => {
             println!("✅ Successfully connected to device!");
             println!("{}", device.device_info()?);
-            
+
             // Test basic input reading
             println!("\n🎛️  Testing input reading (press Ctrl+C to stop)...");
             for i in 0..10 {
                 match device.read_input() {
                     Ok(data) if !data.is_empty() => {
-                        println!("Input #{}: {} bytes - {:?}", i + 1, data.len(), &data[..std::cmp::min(8, data.len())]);
+                        println!(
+                            "Input #{}: {} bytes - {:?}",
+                            i + 1,
+                            data.len(),
+                            &data[..std::cmp::min(8, data.len())]
+                        );
                     }
                     Ok(_) => {
                         print!(".");
@@ -64,6 +74,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("❌ Error connecting to device: {}", e);
         }
     }
-    
+
     Ok(())
 }

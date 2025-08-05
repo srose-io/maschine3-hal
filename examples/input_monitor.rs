@@ -1,11 +1,11 @@
-use mk3_hal::{MaschineMK3Hid, MK3Error, InputState, PadState};
+use mk3_hal::{MaschineMK3, MK3Error, InputState, PadState};
 use std::time::Duration;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🎛️  Maschine MK3 Input Monitor");
     println!("=====================================");
     
-    let device = match MaschineMK3Hid::new() {
+    let device = match MaschineMK3::new() {
         Ok(device) => {
             println!("✅ Connected: {}", device.device_info()?);
             device
@@ -31,7 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut any_activity = false;
 
         // Monitor button/knob input
-        match device.read_input_raw() {
+        match device.read_input() {
             Ok(data) if !data.is_empty() => {
                 match data[0] {
                     0x01 if data.len() >= 42 => {

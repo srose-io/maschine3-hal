@@ -89,7 +89,7 @@ fn create_single_row_packet(display_num: u8, time: f32) -> Vec<u8> {
 
             let red = red_float.clamp(0.0, 255.0) as u8;
             let blue = blue_float.clamp(0.0, 255.0) as u8;
-            let color_rgb444 = rgb565x(0, 0, blue); // Pure red channel animation
+            let color_rgb444 = rgb565x(red, blue, 0); // Pure red channel animation
 
             pixel_buffer[pixel_idx] = (color_rgb444 & 0xff) as u8; // LSB
             pixel_buffer[pixel_idx + 1] = (color_rgb444 >> 8) as u8; // MSB

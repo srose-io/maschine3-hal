@@ -2,7 +2,6 @@
 
 The Maschine MK3 LEDs are listening on `Interface #4`, `Endpoint 0x03`.
 
-
 ## Protocol Overview
 
 The first byte indicates the type of the transmission.
@@ -410,17 +409,16 @@ or RGB, is controlled via a single byte.
        <td style="white-space:nowrap;font-family:monospace;"> Always 0x81 for Pads</td>
     </tr>
     <tr>
-        <td style="white-space:nowrap;font-family:monospace;text-align: center;"> 1-26</td>
+        <td style="white-space:nowrap;font-family:monospace;text-align: center;"> 0-25</td>
         <td style="white-space:nowrap;font-family:monospace;">
            Touch Pad LEDs, from left to right<br/>
-           25 RGB
+           26 RGB
         </td>
     </tr>
     <tr>
-        <td style="white-space:nowrap;font-family:monospace;text-align: center;"> 27-42 </td>
+        <td style="white-space:nowrap;font-family:monospace;text-align: center;"> 26-41 </td>
         <td style="white-space:nowrap;font-family:monospace;">
            16 RGB Pads<br/>
         </td>
     </tr>
 </table>
-

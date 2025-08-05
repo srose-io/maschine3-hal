@@ -1,7 +1,11 @@
 use crate::error::{MK3Error, Result};
 use crate::output::{DisplayPacket, Rgb565};
+use crate::{ButtonLedState, PadLedState};
 use rusb::{Context, Device, DeviceHandle, UsbContext};
 use std::time::Duration;
+
+#[cfg(target_os = "windows")]
+use hidapi::{HidApi, HidDevice};
 
 /// Native Instruments Maschine MK3 USB constants
 const VENDOR_ID: u16 = 0x17CC;
@@ -16,7 +20,11 @@ const DISPLAY_ENDPOINT: u8 = 0x04; // Original endpoint 0x04 from interface 5
 
 pub struct MaschineMK3 {
     device_handle: DeviceHandle<Context>,
-    context: Context,
+    pub context: Context,
+    #[cfg(target_os = "windows")]
+    hid_device: Option<HidDevice>,
+    #[cfg(target_os = "windows")]
+    _hid_api: Option<HidApi>,
 }
 
 impl MaschineMK3 {
@@ -65,9 +73,46 @@ impl MaschineMK3 {
             }
         }
 
+        // Try to open HID device for LED communication on Windows
+        #[cfg(target_os = "windows")]
+        let (hid_device, hid_api) = {
+            match HidApi::new() {
+                Ok(api) => {
+                    let devices = api.device_list();
+                    let mut hid_dev = None;
+                    
+                    for device_info in devices {
+                        if device_info.vendor_id() == VENDOR_ID && device_info.product_id() == PRODUCT_ID {
+                            if device_info.interface_number() == 4 {
+                                match device_info.open_device(&api) {
+                                    Ok(dev) => {
+                                        hid_dev = Some(dev);
+                                        break;
+                                    }
+                                    Err(_) => {
+                                        // Silently continue to next device
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    (hid_dev, Some(api))
+                }
+                Err(_) => {
+                    // HID API not available, fall back to USB only
+                    (None, None)
+                }
+            }
+        };
+
         Ok(Self {
             device_handle,
             context,
+            #[cfg(target_os = "windows")]
+            hid_device,
+            #[cfg(target_os = "windows")]
+            _hid_api: hid_api,
         })
     }
 
@@ -89,6 +134,24 @@ impl MaschineMK3 {
                 Err(e) => {
                     println!("❌ Failed to claim interface {}: {:?}", interface, e);
                     return Err(MK3Error::Usb(e));
+                }
+            }
+        }
+
+        // On non-Windows systems, try to detach kernel driver first
+        #[cfg(not(target_os = "windows"))]
+        {
+            // Try to detach kernel driver (ignore errors)
+            let _ = handle.detach_kernel_driver(interface);
+
+            match handle.claim_interface(interface) {
+                Ok(()) => {
+                    println!("✅ Successfully claimed interface {}", interface);
+                    Ok(())
+                }
+                Err(e) => {
+                    println!("❌ Failed to claim interface {}: {:?}", interface, e);
+                    Err(MK3Error::Usb(e))
                 }
             }
         }
@@ -167,10 +230,27 @@ impl MaschineMK3 {
 
     /// Write LED data to the device
     pub fn write_leds(&self, data: &[u8]) -> Result<()> {
+        #[cfg(target_os = "windows")]
+        {
+            // On Windows, use HID API for LED communication (interface 4 requires HID driver)
+            if let Some(ref hid_dev) = self.hid_device {
+                match hid_dev.write(data) {
+                    Ok(_) => return Ok(()),
+                    Err(e) => {
+                        eprintln!("HID LED write failed: {}", e);
+                        return Err(MK3Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e)));
+                    }
+                }
+            }
+        }
+        
+        // Fallback to USB interrupt transfer (for non-Windows or if HID failed)
         let timeout = Duration::from_millis(100);
-        self.device_handle
-            .write_interrupt(OUTPUT_ENDPOINT, data, timeout)?;
-        Ok(())
+        match self.device_handle
+            .write_interrupt(OUTPUT_ENDPOINT, data, timeout) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(MK3Error::Usb(e))
+        }
     }
 
     /// Write display data to the device
@@ -181,21 +261,22 @@ impl MaschineMK3 {
         Ok(())
     }
 
+    /// Write button LED state
+    pub fn write_button_leds(&self, state: &ButtonLedState) -> Result<()> {
+        let packet = state.to_packet();
+        self.write_leds(&packet)
+    }
+
+    /// Write pad LED state
+    pub fn write_pad_leds(&self, state: &PadLedState) -> Result<()> {
+        let packet = state.to_packet();
+        self.write_leds(&packet)
+    }
+
     /// Write a display packet to a specific display
     pub fn write_display_packet(&self, packet: &DisplayPacket) -> Result<()> {
         let data = packet.to_packet();
         self.write_display(&data)
-    }
-
-    /// Clear a display (fill with black)
-    pub fn clear_display(&self, display_id: u8) -> Result<()> {
-        let mut packet = DisplayPacket::new(display_id, 0, 0, 480, 272);
-
-        // Use repeat command for efficiency - fill entire screen with black
-        packet.add_repeat(Rgb565::black(), Rgb565::black(), (480 * 272) / 2);
-        packet.finish();
-
-        self.write_display_packet(&packet)
     }
 
     /// Send raw data directly to the device (for testing/debugging)
@@ -253,6 +334,55 @@ impl MaschineMK3 {
             device_desc.vendor_id(),
             device_desc.product_id()
         ))
+    }
+
+    /// Display dimensions
+    pub const DISPLAY_WIDTH: u16 = 480;
+    pub const DISPLAY_HEIGHT: u16 = 272;
+
+    /// Send optimized full-screen image to display (30 FPS capable)
+    pub fn send_display_image(&self, display_num: u8, pixels: Vec<Rgb565>) -> Result<()> {
+        let num_pixels = Self::DISPLAY_WIDTH as usize * Self::DISPLAY_HEIGHT as usize;
+
+        if pixels.len() != num_pixels {
+            return Err(MK3Error::InvalidData(format!(
+                "Expected {} pixels, got {}",
+                num_pixels,
+                pixels.len()
+            )));
+        }
+
+        let packet = DisplayPacket::full_screen_optimized(display_num, pixels);
+        self.send_raw_data(&packet.to_packet())
+    }
+
+    /// Send RGB888 image to display (converts to RGB565X)
+    pub fn send_display_rgb888(&self, display_num: u8, rgb_data: &[u8]) -> Result<()> {
+        let num_pixels = Self::DISPLAY_WIDTH as usize * Self::DISPLAY_HEIGHT as usize;
+
+        if rgb_data.len() != num_pixels * 3 {
+            return Err(MK3Error::InvalidData(format!(
+                "Expected {} RGB bytes, got {}",
+                num_pixels * 3,
+                rgb_data.len()
+            )));
+        }
+
+        // Convert RGB888 to RGB565X
+        let mut pixels = Vec::with_capacity(num_pixels);
+        for chunk in rgb_data.chunks_exact(3) {
+            pixels.push(Rgb565::new(chunk[0], chunk[1], chunk[2]));
+        }
+
+        self.send_display_image(display_num, pixels)
+    }
+
+    /// Clear display with solid color
+    pub fn clear_display(&self, display_num: u8, red: u8, green: u8, blue: u8) -> Result<()> {
+        let num_pixels = Self::DISPLAY_WIDTH as usize * Self::DISPLAY_HEIGHT as usize;
+        let color = Rgb565::new(red, green, blue);
+        let pixels = vec![color; num_pixels];
+        self.send_display_image(display_num, pixels)
     }
 }
 
