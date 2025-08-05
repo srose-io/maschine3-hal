@@ -57,37 +57,13 @@ name = "ni_udp_hack"
 path = "examples/ni_udp_hack.rs"
 
 [[example]]
-name = "display_debug"
-path = "examples/display_debug.rs"
-
-[[example]]
-name = "display_test2"
-path = "examples/display_test2.rs"
-
-[[example]]
-name = "display_color_test"
-path = "examples/display_color_test.rs"
-
-[[example]]
-name = "display_header_fix"
-path = "examples/display_header_fix.rs"
-
-[[example]]
-name = "display_working_base"
-path = "examples/display_working_base.rs"
-
-[[example]]
-name = "display_debug_colors"
-path = "examples/display_debug_colors.rs"
-
-[[example]]
-name = "display_real_protocol"
-path = "examples/display_real_protocol.rs"
-
-[[example]]
 name = "raw_loader"
 path = "examples/raw_loader.rs"
 
 [[example]]
 name = "working_display"
 path = "examples/working_display.rs"
+
+[[example]]
+name = "red_green_animation"
+path = "examples/red_green_animation.rs"

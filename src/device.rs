@@ -9,7 +9,7 @@ const PRODUCT_ID: u16 = 0x1600;
 
 /// USB Interface and Endpoint constants
 const HID_INTERFACE: u8 = 4;
-const DISPLAY_INTERFACE: u8 = 5;  // Back to original - Interface 5 with WinUSB
+const DISPLAY_INTERFACE: u8 = 5; // Back to original - Interface 5 with WinUSB
 const INPUT_ENDPOINT: u8 = 0x83;
 const OUTPUT_ENDPOINT: u8 = 0x03;
 const DISPLAY_ENDPOINT: u8 = 0x04; // Original endpoint 0x04 from interface 5
@@ -35,14 +35,20 @@ impl MaschineMK3 {
 
         // Try to detach kernel drivers and claim interfaces
         Self::claim_interface_with_detach(&mut device_handle, HID_INTERFACE)?;
-        
+
         // On Windows, try to claim display interface but don't fail if it doesn't work
         match Self::claim_interface_with_detach(&mut device_handle, DISPLAY_INTERFACE) {
-            Ok(()) => println!("✅ Display interface {} claimed successfully", DISPLAY_INTERFACE),
+            Ok(()) => println!(
+                "✅ Display interface {} claimed successfully",
+                DISPLAY_INTERFACE
+            ),
             Err(e) => {
-                println!("⚠️  Could not claim display interface {}: {}", DISPLAY_INTERFACE, e);
+                println!(
+                    "⚠️  Could not claim display interface {}: {}",
+                    DISPLAY_INTERFACE, e
+                );
                 println!("   Trying alternative interface 3...");
-                
+
                 // Try Interface 3 as backup
                 match Self::claim_interface_with_detach(&mut device_handle, 3) {
                     Ok(()) => {
@@ -71,7 +77,7 @@ impl MaschineMK3 {
         interface: u8,
     ) -> Result<()> {
         println!("🔧 Attempting to claim interface {}", interface);
-        
+
         // On Windows, try direct claim first (kernel driver detachment not supported)
         #[cfg(target_os = "windows")]
         {
@@ -83,33 +89,6 @@ impl MaschineMK3 {
                 Err(e) => {
                     println!("❌ Failed to claim interface {}: {:?}", interface, e);
                     return Err(MK3Error::Usb(e));
-                }
-            }
-        }
-        
-        // On Unix systems, try detaching kernel driver first
-        #[cfg(not(target_os = "windows"))]
-        {
-            // Try to detach kernel driver first (ignore errors if not attached)
-            let _ = handle.detach_kernel_driver(interface);
-
-            // Now try to claim the interface
-            match handle.claim_interface(interface) {
-                Ok(()) => {
-                    println!("✅ Successfully claimed interface {}", interface);
-                    Ok(())
-                }
-                Err(rusb::Error::Busy) => {
-                    println!("⚠️  Interface {} busy, trying force detach", interface);
-                    // Interface is busy, try force detach
-                    handle.detach_kernel_driver(interface)?;
-                    handle.claim_interface(interface)?;
-                    println!("✅ Successfully claimed interface {} after detach", interface);
-                    Ok(())
-                }
-                Err(e) => {
-                    println!("❌ Failed to claim interface {}: {:?}", interface, e);
-                    Err(MK3Error::Usb(e))
                 }
             }
         }
@@ -133,24 +112,35 @@ impl MaschineMK3 {
     /// Debug device configuration information
     fn debug_device_info(device: &Device<Context>) -> Result<()> {
         let device_desc = device.device_descriptor()?;
-        println!("📱 Device found: VID:0x{:04X} PID:0x{:04X}", 
-                 device_desc.vendor_id(), device_desc.product_id());
-        
+        println!(
+            "📱 Device found: VID:0x{:04X} PID:0x{:04X}",
+            device_desc.vendor_id(),
+            device_desc.product_id()
+        );
+
         let config_desc = device.config_descriptor(0)?;
-        println!("🔧 Configuration: {} interfaces", config_desc.num_interfaces());
-        
+        println!(
+            "🔧 Configuration: {} interfaces",
+            config_desc.num_interfaces()
+        );
+
         for interface in config_desc.interfaces() {
             println!("   Interface {}", interface.number());
-            
+
             for interface_desc in interface.descriptors() {
-                println!("     Class: 0x{:02X}, Subclass: 0x{:02X}, Protocol: 0x{:02X}",
-                         interface_desc.class_code(),
-                         interface_desc.sub_class_code(), 
-                         interface_desc.protocol_code());
-                
+                println!(
+                    "     Class: 0x{:02X}, Subclass: 0x{:02X}, Protocol: 0x{:02X}",
+                    interface_desc.class_code(),
+                    interface_desc.sub_class_code(),
+                    interface_desc.protocol_code()
+                );
+
                 for endpoint in interface_desc.endpoint_descriptors() {
-                    println!("       Endpoint: 0x{:02X} ({:?})",
-                             endpoint.address(), endpoint.transfer_type());
+                    println!(
+                        "       Endpoint: 0x{:02X} ({:?})",
+                        endpoint.address(),
+                        endpoint.transfer_type()
+                    );
                 }
             }
         }
@@ -208,72 +198,27 @@ impl MaschineMK3 {
         self.write_display_packet(&packet)
     }
 
-    /// Fill display with a solid color
-    pub fn fill_display(&self, display_id: u8, color: Rgb565) -> Result<()> {
-        let mut packet = DisplayPacket::new(display_id, 0, 0, 480, 272);
-
-        // Use repeat command for efficiency
-        packet.add_repeat(color, color, (480 * 272) / 2);
-        packet.finish();
-
-        self.write_display_packet(&packet)
-    }
-
-    /// Draw a rectangle on the display
-    pub fn draw_rect(
-        &self,
-        display_id: u8,
-        x: u16,
-        y: u16,
-        width: u16,
-        height: u16,
-        color: Rgb565,
-    ) -> Result<()> {
-        let mut packet = DisplayPacket::new(display_id, x, y, width, height);
-
-        // Use repeat command for solid color rectangle
-        packet.add_repeat(color, color, (width as u32 * height as u32) / 2);
-        packet.finish();
-
-        self.write_display_packet(&packet)
-    }
-
-    /// Draw a pattern to display
-    pub fn draw_pattern(
-        &self,
-        display_id: u8,
-        pattern: &[Rgb565],
-        width: u16,
-        height: u16,
-        x: u16,
-        y: u16,
-    ) -> Result<()> {
-        if pattern.len() != (width as usize * height as usize) {
-            return Err(MK3Error::InvalidPacket);
-        }
-
-        let mut packet = DisplayPacket::new(display_id, x, y, width, height);
-        packet.add_pixels(pattern.to_vec());
-        packet.finish();
-
-        self.write_display_packet(&packet)
-    }
-
     /// Send raw data directly to the device (for testing/debugging)
     pub fn send_raw_data(&self, data: &[u8]) -> Result<()> {
         let timeout = Duration::from_millis(1000);
-        
+
         // Try display endpoint first (bulk transfer)
-        match self.device_handle.write_bulk(DISPLAY_ENDPOINT, data, timeout) {
+        match self
+            .device_handle
+            .write_bulk(DISPLAY_ENDPOINT, data, timeout)
+        {
             Ok(_) => {
-                println!("✅ Sent {} bytes via display endpoint (bulk)", data.len());
+                //println!("✅ Sent {} bytes via display endpoint (bulk)", data.len());
                 Ok(())
             }
             Err(e) => {
                 println!("⚠️  Display endpoint failed: {}, trying HID endpoint...", e);
-                
+
                 // Fallback to HID endpoint (interrupt transfer)
-                match self.device_handle.write_interrupt(OUTPUT_ENDPOINT, data, timeout) {
+                match self
+                    .device_handle
+                    .write_interrupt(OUTPUT_ENDPOINT, data, timeout)
+                {
                     Ok(_) => {
                         println!("✅ Sent {} bytes via HID endpoint (interrupt)", data.len());
                         Ok(())
@@ -316,28 +261,5 @@ impl Drop for MaschineMK3 {
         // Release interfaces on cleanup
         let _ = self.device_handle.release_interface(HID_INTERFACE);
         let _ = self.device_handle.release_interface(DISPLAY_INTERFACE);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_device_detection() {
-        // This test will only pass if a Maschine MK3 is connected
-        match MaschineMK3::new() {
-            Ok(device) => {
-                println!("Found device: {}", device.device_info().unwrap());
-                assert!(true);
-            }
-            Err(MK3Error::DeviceNotFound) => {
-                println!("No Maschine MK3 device found - this is expected if none is connected");
-                assert!(true);
-            }
-            Err(e) => {
-                panic!("Unexpected error: {}", e);
-            }
-        }
     }
 }

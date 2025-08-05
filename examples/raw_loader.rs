@@ -40,10 +40,10 @@ fn parse_display_packet(data: &[u8]) -> Option<DisplayPacketInfo> {
     let display_id = data[2]; // Header 3
 
     // CORRECTED: Coordinates are at header offsets 8-15, not 16+!
-    let x_start = ((data[8] as u16) << 8) | (data[9] as u16);   // offset 8-9
+    let x_start = ((data[8] as u16) << 8) | (data[9] as u16); // offset 8-9
     let y_start = ((data[10] as u16) << 8) | (data[11] as u16); // offset 10-11
-    let width = ((data[12] as u16) << 8) | (data[13] as u16);   // offset 12-13
-    let height = ((data[14] as u16) << 8) | (data[15] as u16);  // offset 14-15
+    let width = ((data[12] as u16) << 8) | (data[13] as u16); // offset 12-13
+    let height = ((data[14] as u16) << 8) | (data[15] as u16); // offset 14-15
 
     println!("📊 Raw header bytes 0-31: {:02X?}", &data[0..32]);
     println!(
@@ -61,108 +61,6 @@ fn parse_display_packet(data: &[u8]) -> Option<DisplayPacketInfo> {
         display_id,
         commands_start: 32,
     })
-}
-
-fn inject_test_pattern(data: &mut [u8], info: &DisplayPacketInfo) -> bool {
-    println!("📝 Injecting test pattern into packet:");
-    println!(
-        "   Display: {} | Region: {}x{} at ({}, {})",
-        info.display_id, info.width, info.height, info.x_start, info.y_start
-    );
-
-    let mut pos = info.commands_start;
-    let data_len = data.len();
-
-    while pos + 4 <= data_len {
-        let cmd = data[pos];
-        let param1 = data[pos + 1];
-        let param2 = data[pos + 2];
-        let param3 = data[pos + 3];
-
-        match cmd {
-            0x00 => {
-                // Transmit pixels command
-                let pixel_count =
-                    ((param1 as u32) << 16) | ((param2 as u32) << 8) | (param3 as u32);
-                let pixel_bytes = pixel_count * 2; // RGB565 = 2 bytes per pixel
-                let data_end = pos + 4 + pixel_bytes as usize;
-
-                if data_end <= data_len {
-                    println!(
-                        "   🎨 Found pixel data: {} pixels ({} bytes) at offset {}",
-                        pixel_count,
-                        pixel_bytes,
-                        pos + 4
-                    );
-
-                    // Inject red/blue gradient pattern
-                    for i in 0..pixel_count {
-                        let pixel_offset = pos + 4 + (i as usize * 2);
-                        if pixel_offset + 1 < data_len {
-                            let ratio = i as f32 / pixel_count as f32;
-                            // Create red-to-blue gradient
-                            let red = ((1.0 - ratio) * 31.0) as u8; // 5-bit red
-                            let blue = (ratio * 31.0) as u8; // 5-bit blue
-                            let green = 32; // 6-bit green (middle value)
-
-                            // Pack RGB565 using WORKING implementation format
-                            let rgb565 = ((red as u16 & 0x1f) << 11) | 
-                                    ((green as u16 & 0x3f) << 5) | 
-                                        (blue as u16 & 0x1f);
-                            
-                             // Store as little-endian (LSB first, MSB second)
-                             data[pixel_offset] = (rgb565 & 0xFF) as u8; // LSB
-                             data[pixel_offset + 1] = (rgb565 >> 8) as u8; // MSB
-                        }
-                    }
-
-                    // Align to 4-byte boundary
-                    let aligned_end = (data_end + 3) & !3;
-                    pos = aligned_end;
-                } else {
-                    break;
-                }
-            }
-            0x01 => {
-                // Repeat pixels command
-                let repeat_count =
-                    ((param1 as u32) << 16) | ((param2 as u32) << 8) | (param3 as u32);
-                println!(
-                    "   🔄 Found repeat command: {} repetitions at offset {}",
-                    repeat_count,
-                    pos + 4
-                );
-
-                // Inject alternating red/blue pattern
-                if pos + 8 <= data_len {
-                    // First pixel: red (RGB565: 11111 000000 00000 = 0xF800)
-                    data[pos + 4] = 0x00;
-                    data[pos + 5] = 0xF8;
-
-                    // Second pixel: blue (RGB565: 00000 000000 11111 = 0x001F)
-                    data[pos + 6] = 0x1F;
-                    data[pos + 7] = 0x00;
-                }
-                pos += 8;
-            }
-            0x03 => {
-                // Unknown command (probably blit)
-                println!("   🔄 Found blit command at offset {}", pos);
-                pos += 4;
-            }
-            0x40 => {
-                // End of transmission
-                println!("   ✅ End of transmission at offset {}", pos);
-                break;
-            }
-            _ => {
-                println!("   ❓ Unknown command 0x{:02X} at offset {}", cmd, pos);
-                pos += 4;
-            }
-        }
-    }
-
-    true
 }
 
 fn send_raw_data_to_screen(
@@ -224,9 +122,6 @@ fn main() -> Result<()> {
                 // }
 
                 std::thread::sleep(std::time::Duration::from_millis(2000));
-
-                println!("\n🎨 Injecting test pattern...");
-                inject_test_pattern(&mut data, &info);
 
                 if let Err(e) = send_raw_data_to_screen(&mut device, &data, info.display_id) {
                     eprintln!("Failed to send modified first.raw: {}", e);
