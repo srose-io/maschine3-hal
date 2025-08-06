@@ -13,7 +13,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Test basic input reading
             println!("\n🎛️  Testing input reading - press some buttons/knobs NOW...");
             for i in 0..50 {
-                match device.read_input() {
+                match device.read_raw_input() {
                     Ok(data) if !data.is_empty() => {
                         println!(
                             "Input #{}: {} bytes - {:?}",
@@ -47,7 +47,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Test basic input reading
             println!("\n🎛️  Testing input reading (press Ctrl+C to stop)...");
             for i in 0..10 {
-                match device.read_input() {
+                match device.read_raw_input() {
                     Ok(data) if !data.is_empty() => {
                         println!(
                             "Input #{}: {} bytes - {:?}",

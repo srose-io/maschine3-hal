@@ -2,6 +2,14 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Instructions
+
+# If you run into a lifetime issue, don't make short sighted refactors just to get it to compile. If a clean simple solution isn't obvious, stop and ask for help!
+
+# Don't put in workarounds just to get something to build, focus on the root cause of the issue.
+
+# Don't use cutesey descriptions for while you are working like "divining" or "moseying", just be professional use "thinking"
+
 ## Project Overview
 
 This is a Rust hardware abstraction layer (HAL) for the Native Instruments Maschine MK3 controller. It provides low-level USB HID communication with the device, handling button/pad inputs, LED outputs, and display graphics.
@@ -28,6 +36,7 @@ This is a Rust hardware abstraction layer (HAL) for the Native Instruments Masch
 ## Common Development Commands
 
 ### Build and Test
+
 ```bash
 # Build the library
 cargo build
@@ -56,6 +65,7 @@ cargo fmt
 ### Working with Examples
 
 The `examples/` directory contains various test programs:
+
 - `simple_test.rs` - Basic connectivity and LED test
 - `input_monitor.rs` - Real-time input monitoring
 - `color_test.rs` - Display color patterns
@@ -65,6 +75,7 @@ The `examples/` directory contains various test programs:
 ## Protocol Documentation
 
 Detailed USB protocol documentation is in `docs/`:
+
 - `MaschineMK3-Overview.md` - USB endpoint overview
 - `MaschineMK3-HIDInput.md` - Input protocol (buttons, pads, knobs)
 - `MaschineMK3-HIDOutput.md` - LED output protocol

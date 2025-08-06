@@ -23,7 +23,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("   Press Ctrl+C to stop\n");
 
     loop {
-        match device.read_input() {
+        match device.read_raw_input() {
             Ok(data) if !data.is_empty() => {
                 match data[0] {
                     0x01 => {

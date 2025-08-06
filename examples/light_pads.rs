@@ -1,15 +1,13 @@
-use mk3_hal::{
-    ButtonLedState, InputState, MK3Error, MaschineLEDColor, MaschineMK3, PadLedState, PadState,
-};
+use mk3_hal::{InputElement, InputEvent, MK3Error, MaschineLEDColor, MaschineMK3};
 use std::time::Duration;
 
-/// Basic test application demonstrating all MK3 functionality
+/// Interactive pad lighting demo
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🎵 Maschine MK3 HAL - Comprehensive Test");
+    println!("🎨 Maschine MK3 Interactive Pad Lighting");
     println!("⚠️  Make sure to close any NI software first!\n");
 
     // Connect to device
-    let device = match MaschineMK3::new() {
+    let mut device = match MaschineMK3::new() {
         Ok(device) => {
             println!("✅ Connected: {}", device.device_info()?);
             device
@@ -24,97 +22,123 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    println!("\n🧪 Starting test sequence...\n");
+    println!("\n🎮 Interactive Mode");
+    println!("   Press buttons to light them up!");
+    println!("   Hit pads to light them up with velocity-based brightness!");
+    println!("   Press Ctrl+C to exit\n");
 
-    // Test 3: Interactive mode
-    println!("🎮 Test 3: Interactive Mode (15 seconds)");
-    println!("   Press buttons to light up LEDs!");
-    println!("   Hit pads to light them up!");
+    // Clear all LEDs initially
+    device.clear_all_leds()?;
 
     let start_time = std::time::Instant::now();
-    let mut current_button_leds = ButtonLedState::default();
-    let mut current_pad_leds = PadLedState::default();
 
-    while start_time.elapsed() < Duration::from_secs(15) {
-        let mut led_update_needed = false;
+    loop {
+        let events = device.poll_input_events()?;
 
-        // React to button presses
-        if let Ok(data) = device.read_input() {
-            if !data.is_empty() && data[0] == 0x01 && data.len() >= 42 {
-                if let Ok(input) = InputState::from_button_packet(&data) {
-                    // Light up transport buttons
-                    current_button_leds.play = if input.buttons.play { 127 } else { 0 };
-                    current_button_leds.rec = if input.buttons.rec { 127 } else { 0 };
-                    current_button_leds.stop = if input.buttons.stop { 127 } else { 0 };
+        for event in events {
+            match event {
+                InputEvent::ButtonPressed(element) => {
+                    println!("🔽 {} pressed", element.name());
 
-                    // Light up group buttons with colors
-                    current_button_leds.group_a = if input.buttons.group_a {
-                        MaschineLEDColor::red(true)
-                    } else {
-                        MaschineLEDColor::black()
-                    };
-                    current_button_leds.group_b = if input.buttons.group_b {
-                        MaschineLEDColor::green(true)
-                    } else {
-                        MaschineLEDColor::black()
-                    };
-                    current_button_leds.group_c = if input.buttons.group_c {
-                        MaschineLEDColor::blue(true)
-                    } else {
-                        MaschineLEDColor::black()
-                    };
-                    current_button_leds.group_d = if input.buttons.group_d {
-                        MaschineLEDColor::white(true)
-                    } else {
-                        MaschineLEDColor::black()
-                    };
+                    // Light up different buttons with different colors
+                    match element {
+                        // Transport buttons (brightness-based)
+                        InputElement::Play => device.set_button_led(element, 127)?,
+                        InputElement::Rec => device.set_button_led(element, 127)?,
+                        InputElement::Stop => device.set_button_led(element, 127)?,
 
-                    led_update_needed = true;
-                }
-            }
-        }
-
-        // React to pad hits
-        if let Ok(data) = device.read_input() {
-            if !data.is_empty() && data[0] == 0x02 {
-                if let Ok(pads) = PadState::from_pad_packet(&data) {
-                    // Filter out false hits (pad 0 with no data)
-                    let hits: Vec<_> = pads.hits;
-
-                    for hit in &hits {
-                        println!("Hit: {:?}", hit);
-                        if hit.pad_number < 16 {
-                            // Light up the hit pad with random color
-                            current_pad_leds.pad_leds[hit.pad_number as usize] =
-                                MaschineLEDColor::red(true);
-                            led_update_needed = true;
+                        // Group buttons (color-based)
+                        InputElement::GroupA => {
+                            device.set_button_led_color(element, MaschineLEDColor::red(true))?
                         }
+                        InputElement::GroupB => {
+                            device.set_button_led_color(element, MaschineLEDColor::green(true))?
+                        }
+                        InputElement::GroupC => {
+                            device.set_button_led_color(element, MaschineLEDColor::blue(true))?
+                        }
+                        InputElement::GroupD => {
+                            device.set_button_led_color(element, MaschineLEDColor::white(true))?
+                        }
+                        InputElement::GroupE => {
+                            device.set_button_led_color(element, MaschineLEDColor::red(false))?
+                        }
+                        InputElement::GroupF => {
+                            device.set_button_led_color(element, MaschineLEDColor::green(false))?
+                        }
+                        InputElement::GroupG => {
+                            device.set_button_led_color(element, MaschineLEDColor::blue(false))?
+                        }
+                        InputElement::GroupH => {
+                            device.set_button_led_color(element, MaschineLEDColor::white(false))?
+                        }
+
+                        _ => {}
+                    }
+                }
+
+                InputEvent::ButtonReleased(element) => {
+                    println!("🔼 {} released", element.name());
+
+                    // Turn off button when released
+                    match element {
+                        // Transport buttons
+                        InputElement::Play | InputElement::Rec | InputElement::Stop => {
+                            device.set_button_led(element, 0)?;
+                        }
+
+                        // Group buttons
+                        InputElement::GroupA
+                        | InputElement::GroupB
+                        | InputElement::GroupC
+                        | InputElement::GroupD
+                        | InputElement::GroupE
+                        | InputElement::GroupF
+                        | InputElement::GroupG
+                        | InputElement::GroupH => {
+                            device.set_button_led_color(element, MaschineLEDColor::black())?;
+                        }
+
+                        _ => {}
+                    }
+                }
+
+                InputEvent::PadHit {
+                    pad_number,
+                    velocity,
+                    ..
+                } => {
+                    println!("🥁 Pad {} hit (velocity: {})", pad_number + 1, velocity);
+
+                    // Light up pad with color and brightness based on velocity
+                    let high_velocity = velocity > 100;
+                    // let color = match pad_number % 8 {
+                    //     0 => MaschineLEDColor::red(high_velocity),
+                    //     1 => MaschineLEDColor::green(high_velocity),
+                    //     2 => MaschineLEDColor::blue(high_velocity),
+                    //     3 => MaschineLEDColor::white(high_velocity),
+                    //     4 => MaschineLEDColor::red(!high_velocity),
+                    //     5 => MaschineLEDColor::green(!high_velocity),
+                    //     6 => MaschineLEDColor::blue(!high_velocity),
+                    //     _ => MaschineLEDColor::white(!high_velocity),
+                    // };
+                    let color = MaschineLEDColor::white(true);
+
+                    device.set_pad_led(pad_number, color)?;
+
+                    // Schedule pad to fade after a moment (in a real app you'd use a proper timer)
+                    // For now, just keep the pad lit
+                }
+
+                _ => {
+                    // Other events like knob changes - just log occasionally
+                    if start_time.elapsed().as_millis() % 1000 < 100 {
+                        println!("🎛️ {}", event.description());
                     }
                 }
             }
         }
 
-        // Update LEDs if needed
-        if led_update_needed {
-            device.write_button_leds(&current_button_leds)?;
-            device.write_pad_leds(&current_pad_leds)?;
-        }
-
-        // // Fade pad LEDs
-        // for led in &mut current_pad_leds.pad_leds {
-        //     led.bright = led.bright.saturating_sub(2);
-        // }
-
-        std::thread::sleep(Duration::from_millis(50));
+        std::thread::sleep(Duration::from_millis(10));
     }
-
-    // Final cleanup
-    println!("\n🧹 Cleaning up...");
-    device.write_button_leds(&ButtonLedState::default())?;
-    device.write_pad_leds(&PadLedState::default())?;
-
-    println!("✅ All tests completed successfully!");
-    println!("🎉 Maschine MK3 HAL is working!");
-
-    Ok(())
 }

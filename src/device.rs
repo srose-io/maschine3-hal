@@ -1,7 +1,11 @@
 use crate::error::{MK3Error, Result};
-use crate::output::{DisplayPacket, Rgb565};
+use crate::input::{InputEvent, InputState, InputTracker, PadState, InputElement};
+use crate::output::{DisplayPacket, Rgb565, MaschineLEDColor};
 use crate::{ButtonLedState, PadLedState};
 use rusb::{Context, Device, DeviceHandle, UsbContext};
+use std::sync::mpsc::{self, Receiver};
+use std::sync::{Arc, Mutex};
+use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 #[cfg(target_os = "windows")]
@@ -25,6 +29,17 @@ pub struct MaschineMK3 {
     hid_device: Option<HidDevice>,
     #[cfg(target_os = "windows")]
     _hid_api: Option<HidApi>,
+    
+    // LED state management
+    current_button_leds: ButtonLedState,
+    current_pad_leds: PadLedState,
+    led_state_dirty: bool,
+    
+    // Input monitoring
+    input_tracker: InputTracker,
+    input_thread: Option<JoinHandle<()>>,
+    input_stop_signal: Arc<Mutex<bool>>,
+    input_event_receiver: Option<Receiver<InputEvent>>,
 }
 
 impl MaschineMK3 {
@@ -113,6 +128,17 @@ impl MaschineMK3 {
             hid_device,
             #[cfg(target_os = "windows")]
             _hid_api: hid_api,
+            
+            // Initialize LED state management
+            current_button_leds: ButtonLedState::default(),
+            current_pad_leds: PadLedState::default(),
+            led_state_dirty: false,
+            
+            // Initialize input monitoring
+            input_tracker: InputTracker::new(),
+            input_thread: None,
+            input_stop_signal: Arc::new(Mutex::new(false)),
+            input_event_receiver: None,
         })
     }
 
@@ -211,7 +237,7 @@ impl MaschineMK3 {
     }
 
     /// Read input data from the device
-    pub fn read_input(&self) -> Result<Vec<u8>> {
+    fn read_input(&self) -> Result<Vec<u8>> {
         let mut buffer = vec![0u8; 64]; // Max packet size
         let timeout = Duration::from_millis(100);
 
@@ -229,7 +255,7 @@ impl MaschineMK3 {
     }
 
     /// Write LED data to the device
-    pub fn write_leds(&self, data: &[u8]) -> Result<()> {
+    fn write_leds(&self, data: &[u8]) -> Result<()> {
         #[cfg(target_os = "windows")]
         {
             // On Windows, use HID API for LED communication (interface 4 requires HID driver)
@@ -384,10 +410,310 @@ impl MaschineMK3 {
         let pixels = vec![color; num_pixels];
         self.send_display_image(display_num, pixels)
     }
+
+    // === Input Management ===
+    
+    /// Start monitoring input with a callback (non-blocking)
+    pub fn start_input_monitoring<F>(&mut self, callback: F) -> Result<()>
+    where
+        F: Fn(InputEvent) + Send + 'static,
+    {
+        if self.input_thread.is_some() {
+            return Err(MK3Error::InvalidData("Input monitoring already running".to_string()));
+        }
+
+        let (sender, receiver) = mpsc::channel();
+        self.input_event_receiver = Some(receiver);
+        
+        // Clone the device handle for the thread
+        let device = self.device_handle.device();
+        let mut thread_device_handle = device.open()?;
+        Self::claim_interface_with_detach(&mut thread_device_handle, HID_INTERFACE)?;
+        
+        let stop_signal = Arc::clone(&self.input_stop_signal);
+        let mut tracker = InputTracker::new();
+
+        let handle = thread::spawn(move || {
+            loop {
+                // Check stop signal
+                if let Ok(stop) = stop_signal.lock() {
+                    if *stop {
+                        break;
+                    }
+                }
+
+                // Read input from device
+                let data = {
+                    let mut buffer = vec![0u8; 64];
+                    let timeout = Duration::from_millis(100);
+                    match thread_device_handle.read_interrupt(INPUT_ENDPOINT, &mut buffer, timeout) {
+                        Ok(bytes_read) => {
+                            buffer.truncate(bytes_read);
+                            buffer
+                        }
+                        Err(rusb::Error::Timeout) => Vec::new(),
+                        Err(_) => {
+                            thread::sleep(Duration::from_millis(10));
+                            continue;
+                        }
+                    }
+                };
+
+                if data.is_empty() {
+                    thread::sleep(Duration::from_millis(10));
+                    continue;
+                }
+
+                // Process packet and get events
+                let events = match Self::process_input_packet(&mut tracker, &data) {
+                    Ok(events) => events,
+                    Err(_) => continue,
+                };
+
+                // Send events through callback and channel
+                for event in events {
+                    callback(event.clone());
+                    let _ = sender.send(event);
+                }
+
+                thread::sleep(Duration::from_millis(10));
+            }
+        });
+
+        self.input_thread = Some(handle);
+        Ok(())
+    }
+
+    /// Stop input monitoring
+    pub fn stop_input_monitoring(&mut self) -> Result<()> {
+        if let Ok(mut stop) = self.input_stop_signal.lock() {
+            *stop = true;
+        }
+
+        if let Some(handle) = self.input_thread.take() {
+            handle.join().map_err(|_| {
+                MK3Error::InvalidData("Failed to join monitoring thread".to_string())
+            })?;
+        }
+
+        self.input_event_receiver = None;
+        
+        // Reset stop signal for future use
+        if let Ok(mut stop) = self.input_stop_signal.lock() {
+            *stop = false;
+        }
+        
+        Ok(())
+    }
+
+    /// Poll for input events (blocking with timeout)
+    pub fn poll_input_events(&mut self) -> Result<Vec<InputEvent>> {
+        let data = self.read_input()?;
+        
+        if data.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        Self::process_input_packet(&mut self.input_tracker, &data)
+    }
+
+    /// Process a raw input packet and return events
+    fn process_input_packet(tracker: &mut InputTracker, data: &[u8]) -> Result<Vec<InputEvent>> {
+        if data.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        match data[0] {
+            0x01 if data.len() >= 42 => {
+                let input_state = InputState::from_button_packet(data)?;
+                Ok(tracker.update(input_state))
+            }
+            0x02 => {
+                let pad_state = PadState::from_pad_packet(data)?;
+                Ok(tracker.update_pads(pad_state))
+            }
+            _ => Ok(Vec::new()),
+        }
+    }
+
+    // === LED Management ===
+    
+    /// Set individual button LED brightness
+    pub fn set_button_led(&mut self, button: InputElement, brightness: u8) -> Result<()> {
+        let old_value = match button {
+            InputElement::Play => self.current_button_leds.play,
+            _ => 0,
+        };
+        
+        if old_value != brightness {
+            match button {
+                InputElement::Play => self.current_button_leds.play = brightness,
+                _ => {},
+            }
+            self.led_state_dirty = true;
+            self.write_led_state()?;
+        }
+        Ok(())
+    }
+
+    /// Set individual button LED color
+    pub fn set_button_led_color(&mut self, button: InputElement, color: MaschineLEDColor) -> Result<()> {
+        let old_color = match button {
+            InputElement::GroupA => self.current_button_leds.group_a,
+            InputElement::GroupB => self.current_button_leds.group_b,
+            InputElement::GroupC => self.current_button_leds.group_c,
+            InputElement::GroupD => self.current_button_leds.group_d,
+            InputElement::GroupE => self.current_button_leds.group_e,
+            InputElement::GroupF => self.current_button_leds.group_f,
+            InputElement::GroupG => self.current_button_leds.group_g,
+            InputElement::GroupH => self.current_button_leds.group_h,
+            _ => MaschineLEDColor::black(),
+        };
+        
+        if old_color != color {
+            match button {
+                InputElement::GroupA => self.current_button_leds.group_a = color,
+                InputElement::GroupB => self.current_button_leds.group_b = color,
+                InputElement::GroupC => self.current_button_leds.group_c = color,
+                InputElement::GroupD => self.current_button_leds.group_d = color,
+                InputElement::GroupE => self.current_button_leds.group_e = color,
+                InputElement::GroupF => self.current_button_leds.group_f = color,
+                InputElement::GroupG => self.current_button_leds.group_g = color,
+                InputElement::GroupH => self.current_button_leds.group_h = color,
+                _ => {},
+            }
+            self.led_state_dirty = true;
+            self.write_led_state()?;
+        }
+        Ok(())
+    }
+
+    /// Set individual pad LED color
+    pub fn set_pad_led(&mut self, pad_number: u8, color: MaschineLEDColor) -> Result<()> {
+        if pad_number > 15 {
+            return Err(MK3Error::InvalidData("Pad number must be 0-15".to_string()));
+        }
+        
+        let old_color = self.current_pad_leds.pad_leds[pad_number as usize];
+        if old_color != color {
+            self.current_pad_leds.pad_leds[pad_number as usize] = color;
+            self.led_state_dirty = true;
+            self.write_led_state()?;
+        }
+        Ok(())
+    }
+
+    /// Set all button LEDs to the same brightness
+    pub fn set_all_button_leds(&mut self, brightness: u8) -> Result<()> {
+        let mut changed = false;
+        
+        // Set all brightness-based LEDs
+        if self.current_button_leds.play != brightness {
+            self.current_button_leds.play = brightness;
+            changed = true;
+        }
+        // Add more brightness-based buttons as needed
+        
+        if changed {
+            self.led_state_dirty = true;
+            self.write_led_state()?;
+        }
+        Ok(())
+    }
+
+    /// Set all pad LEDs to the same color
+    pub fn set_all_pad_leds(&mut self, color: MaschineLEDColor) -> Result<()> {
+        let mut changed = false;
+        
+        for i in 0..16 {
+            if self.current_pad_leds.pad_leds[i] != color {
+                self.current_pad_leds.pad_leds[i] = color;
+                changed = true;
+            }
+        }
+        
+        if changed {
+            self.led_state_dirty = true;
+            self.write_led_state()?;
+        }
+        Ok(())
+    }
+
+    /// Turn off all LEDs (set to black/0 brightness)
+    pub fn clear_all_leds(&mut self) -> Result<()> {
+        self.current_button_leds = ButtonLedState::default();
+        self.current_pad_leds = PadLedState::default();
+        self.led_state_dirty = true;
+        self.write_led_state()
+    }
+
+    /// Get current button LED brightness
+    pub fn get_button_led_state(&self, button: InputElement) -> u8 {
+        match button {
+            InputElement::Play => self.current_button_leds.play,
+            _ => 0,
+        }
+    }
+
+    /// Get current pad LED color
+    pub fn get_pad_led_color(&self, pad_number: u8) -> MaschineLEDColor {
+        if pad_number > 15 {
+            return MaschineLEDColor::black();
+        }
+        self.current_pad_leds.pad_leds[pad_number as usize]
+    }
+
+    /// Force send LED changes even if no changes detected
+    pub fn flush_led_changes(&mut self) -> Result<()> {
+        self.write_led_state()
+    }
+
+    /// Read raw input data (for debugging purposes)
+    pub fn read_raw_input(&self) -> Result<Vec<u8>> {
+        self.read_input()
+    }
+
+    // === Helper methods ===
+    
+    fn write_led_state(&mut self) -> Result<()> {
+        let button_packet = self.current_button_leds.to_packet();
+        self.write_led_data(&button_packet)?;
+        
+        let pad_packet = self.current_pad_leds.to_packet();
+        self.write_led_data(&pad_packet)?;
+        
+        self.led_state_dirty = false;
+        Ok(())
+    }
+    
+    fn write_led_data(&self, data: &[u8]) -> Result<()> {
+        #[cfg(target_os = "windows")]
+        {
+            if let Some(ref hid_dev) = self.hid_device {
+                match hid_dev.write(data) {
+                    Ok(_) => return Ok(()),
+                    Err(e) => {
+                        eprintln!("HID LED write failed: {}", e);
+                        return Err(MK3Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e)));
+                    }
+                }
+            }
+        }
+        
+        let timeout = Duration::from_millis(100);
+        match self.device_handle.write_interrupt(OUTPUT_ENDPOINT, data, timeout) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(MK3Error::Usb(e))
+        }
+    }
+    
 }
 
 impl Drop for MaschineMK3 {
     fn drop(&mut self) {
+        // Stop input monitoring
+        let _ = self.stop_input_monitoring();
+        
         // Release interfaces on cleanup
         let _ = self.device_handle.release_interface(HID_INTERFACE);
         let _ = self.device_handle.release_interface(DISPLAY_INTERFACE);

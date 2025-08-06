@@ -1,11 +1,11 @@
-use mk3_hal::{InputEvent, InputState, InputTracker, MK3Error, MaschineMK3, PadState};
+use mk3_hal::{MK3Error, MaschineMK3};
 use std::time::Duration;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🎛️  Maschine MK3 Input Monitor");
     println!("=====================================");
 
-    let device = match MaschineMK3::new() {
+    let mut device = match MaschineMK3::new() {
         Ok(device) => {
             println!("✅ Connected: {}", device.device_info()?);
             device
@@ -23,61 +23,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Monitoring all input - interact with your device!");
     println!("   Press Ctrl+C to stop\n");
 
-    let mut input_tracker = InputTracker::new();
+    // Simple polling mode example
     let mut frame_count = 0;
 
     loop {
         frame_count += 1;
-        let mut any_activity = false;
-
-        // Monitor button/knob input
-        match device.read_input() {
-            Ok(data) if !data.is_empty() => {
-                match data[0] {
-                    0x01 if data.len() >= 42 => {
-                        // Parse button/knob packet
-                        match InputState::from_button_packet(&data) {
-                            Ok(input) => {
-                                // Get input events from tracker
-                                let events = input_tracker.update(input.clone());
-
-                                if !events.is_empty() {
-                                    any_activity = true;
-                                    print_input_events(&events, frame_count);
-                                    print_current_state(&input);
-                                }
-                            }
-                            Err(e) => println!("❌ Button parse error: {}", e),
-                        }
-                    }
-                    0x02 => {
-                        // Parse pad packet
-                        match PadState::from_pad_packet(&data) {
-                            Ok(pads) => {
-                                let pad_events = input_tracker.update_pads(pads);
-                                if !pad_events.is_empty() {
-                                    any_activity = true;
-                                    print_input_events(&pad_events, frame_count);
-                                }
-                            }
-                            Err(e) => println!("❌ Pad parse error: {}", e),
-                        }
-                    }
-                    other => {
-                        println!("📦 Unknown packet type: 0x{:02X} ({}B)", other, data.len());
-                    }
-                }
+        
+        // Single call to get all events - framework handles packet parsing and tracking
+        let events = device.poll_input_events()?;
+        
+        if !events.is_empty() {
+            println!(
+                "\n⚡ INPUT EVENTS [Frame {}] ================================",
+                frame_count
+            );
+            
+            for event in events {
+                println!("  {}", event.description());
             }
-            Ok(_) => {
-                // No data - just continue
-            }
-            Err(e) => {
-                println!("❌ Read error: {}", e);
-            }
-        }
-
-        // Print a heartbeat every few seconds when no activity
-        if !any_activity && frame_count % 200 == 0 {
+        } else if frame_count % 200 == 0 {
+            // Heartbeat every few seconds when no activity
             print!("💓");
             std::io::Write::flush(&mut std::io::stdout()).ok();
         }
@@ -86,79 +51,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-fn print_input_events(events: &[InputEvent], frame: u32) {
-    println!(
-        "\n⚡ INPUT EVENTS [Frame {}] ================================",
-        frame
-    );
+// Alternative async/callback example (commented out)
+#[allow(dead_code)]
+fn async_example() -> Result<(), Box<dyn std::error::Error>> {
+    println!("🎛️  Maschine MK3 Input Monitor (Async Mode)");
+    println!("============================================");
 
-    for event in events {
-        match event {
-            InputEvent::ButtonPressed(element) => {
-                println!("  🔽 {} PRESSED", element.name());
-            }
-            InputEvent::ButtonReleased(element) => {
-                println!("  🔼 {} RELEASED", element.name());
-            }
-            InputEvent::ButtonHeld(element) => {
-                println!("  ⏸️  {} HELD", element.name());
-            }
-            InputEvent::KnobChanged {
-                element,
-                value,
-                delta,
-            } => {
-                println!("  🎛️  {} → {} (Δ{})", element.name(), value, delta);
-            }
-            InputEvent::AudioChanged {
-                element,
-                value,
-                delta,
-            } => {
-                println!("  🔊 {} → {} (Δ{})", element.name(), value, delta);
-            }
-            InputEvent::PadHit { .. } => {
-                println!("  🥁 {}", event.description());
-            }
-        }
-    }
-}
+    let mut device = MaschineMK3::new()?;
+    println!("✅ Connected: {}", device.device_info()?);
 
-fn print_current_state(input: &InputState) {
-    println!("\n🎛️  CURRENT STATE =======================================");
+    // Start monitoring with callback
+    device.start_input_monitoring(|event| {
+        println!("{}", event.description());
+    })?;
 
-    // Active buttons
-    let active_buttons = input.get_active_buttons();
-    if !active_buttons.is_empty() {
-        let button_names: Vec<&str> = active_buttons.iter().map(|b| b.name()).collect();
-        println!("  🔘 Active: {}", button_names.join(", "));
-    }
+    println!("\n🔍 Monitoring all input - interact with your device!");
+    println!("   Press Ctrl+C to stop\n");
 
-    // Active knobs
-    let active_knobs = input.get_active_knobs();
-    if !active_knobs.is_empty() {
-        let knob_info: Vec<String> = active_knobs
-            .iter()
-            .map(|(element, value)| format!("{}:{}", element.name(), value))
-            .collect();
-        println!("  🎛️  Knobs: {}", knob_info.join(", "));
-    }
-
-    // Active audio controls
-    let active_audio = input.get_active_audio();
-    if !active_audio.is_empty() {
-        let audio_info: Vec<String> = active_audio
-            .iter()
-            .map(|(element, value)| format!("{}:{}", element.name(), value))
-            .collect();
-        println!("  🔊 Audio: {}", audio_info.join(", "));
-    }
-
-    // Touch strip
-    if let Some(((f1a, f1b, f1c, f1d), (f2a, f2b, f2c, f2d))) = input.get_touch_strip_data() {
-        println!(
-            "  👆 Touch Strip: F1({},{},{},{}) F2({},{},{},{})",
-            f1a, f1b, f1c, f1d, f2a, f2b, f2c, f2d
-        );
+    // Keep the program running
+    loop {
+        std::thread::sleep(Duration::from_secs(1));
     }
 }
