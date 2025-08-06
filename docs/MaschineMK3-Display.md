@@ -1,5 +1,7 @@
 # Native Instruments Maschine MK3 Display Protocol
 
+> **Attribution**: This documentation is adapted from [Drachenkaetzchen/cabl](https://github.com/Drachenkaetzchen/cabl/tree/develop/doc/hardware/maschine-mk3) and has been significantly enhanced and expanded with additional research and implementation details.
+
 The Maschine MK3 Displays are listening on `Interface #5`, `Endpoint 0x04`.
 
 ## Display Information

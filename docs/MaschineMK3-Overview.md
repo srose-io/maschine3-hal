@@ -1,5 +1,7 @@
 # Native Instruments Maschine MK3 Hardware Overview
 
+> **Attribution**: This documentation is adapted from [Drachenkaetzchen/cabl](https://github.com/Drachenkaetzchen/cabl/tree/develop/doc/hardware/maschine-mk3) and has been enhanced with additional research and implementation details.
+
 ## USB Endpoints
 
 ```

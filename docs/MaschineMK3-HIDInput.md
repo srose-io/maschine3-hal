@@ -1,5 +1,7 @@
 # Native Instruments Maschine MK3 USB HID Input
 
+> **Attribution**: This documentation is adapted from [Drachenkaetzchen/cabl](https://github.com/Drachenkaetzchen/cabl/tree/develop/doc/hardware/maschine-mk3) and has been enhanced with additional research and implementation details.
+
 The Maschine MK3 Buttons and Pads are transmitting on `Interface #4`, `Endpoint 0x83`.
 
 

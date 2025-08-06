@@ -1,4 +1,6 @@
-# Native Instruments Maschine MK3 USB HID Input
+# Native Instruments Maschine MK3 USB HID Output
+
+> **Attribution**: This documentation is adapted from [Drachenkaetzchen/cabl](https://github.com/Drachenkaetzchen/cabl/tree/develop/doc/hardware/maschine-mk3) and has been enhanced with additional research and implementation details.
 
 The Maschine MK3 LEDs are listening on `Interface #4`, `Endpoint 0x03`.
 
