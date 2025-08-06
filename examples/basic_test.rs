@@ -176,6 +176,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 // Helper function for HSV to RGB conversion
+#[allow(dead_code)]
 fn hsv_to_rgb(h: f32, s: f32, v: f32) -> RgbColor {
     let c = v * s;
     let x = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());

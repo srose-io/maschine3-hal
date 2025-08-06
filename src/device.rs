@@ -1,6 +1,6 @@
 use crate::error::{MK3Error, Result};
-use crate::input::{InputEvent, InputState, InputTracker, PadState, InputElement};
-use crate::output::{DisplayPacket, Rgb565, MaschineLEDColor};
+use crate::input::{InputElement, InputEvent, InputState, InputTracker, PadState};
+use crate::output::{DisplayPacket, MaschineLEDColor, Rgb565};
 use crate::{ButtonLedState, PadLedState};
 use rusb::{Context, Device, DeviceHandle, UsbContext};
 use std::sync::mpsc::{self, Receiver};
@@ -29,12 +29,12 @@ pub struct MaschineMK3 {
     hid_device: Option<HidDevice>,
     #[cfg(target_os = "windows")]
     _hid_api: Option<HidApi>,
-    
+
     // LED state management
     current_button_leds: ButtonLedState,
     current_pad_leds: PadLedState,
     led_state_dirty: bool,
-    
+
     // Input monitoring
     input_tracker: InputTracker,
     input_thread: Option<JoinHandle<()>>,
@@ -95,9 +95,11 @@ impl MaschineMK3 {
                 Ok(api) => {
                     let devices = api.device_list();
                     let mut hid_dev = None;
-                    
+
                     for device_info in devices {
-                        if device_info.vendor_id() == VENDOR_ID && device_info.product_id() == PRODUCT_ID {
+                        if device_info.vendor_id() == VENDOR_ID
+                            && device_info.product_id() == PRODUCT_ID
+                        {
                             if device_info.interface_number() == 4 {
                                 match device_info.open_device(&api) {
                                     Ok(dev) => {
@@ -111,7 +113,7 @@ impl MaschineMK3 {
                             }
                         }
                     }
-                    
+
                     (hid_dev, Some(api))
                 }
                 Err(_) => {
@@ -128,12 +130,12 @@ impl MaschineMK3 {
             hid_device,
             #[cfg(target_os = "windows")]
             _hid_api: hid_api,
-            
+
             // Initialize LED state management
             current_button_leds: ButtonLedState::default(),
             current_pad_leds: PadLedState::default(),
             led_state_dirty: false,
-            
+
             // Initialize input monitoring
             input_tracker: InputTracker::new(),
             input_thread: None,
@@ -264,18 +266,23 @@ impl MaschineMK3 {
                     Ok(_) => return Ok(()),
                     Err(e) => {
                         eprintln!("HID LED write failed: {}", e);
-                        return Err(MK3Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e)));
+                        return Err(MK3Error::Io(std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            e,
+                        )));
                     }
                 }
             }
         }
-        
+
         // Fallback to USB interrupt transfer (for non-Windows or if HID failed)
         let timeout = Duration::from_millis(100);
-        match self.device_handle
-            .write_interrupt(OUTPUT_ENDPOINT, data, timeout) {
+        match self
+            .device_handle
+            .write_interrupt(OUTPUT_ENDPOINT, data, timeout)
+        {
             Ok(_) => Ok(()),
-            Err(e) => Err(MK3Error::Usb(e))
+            Err(e) => Err(MK3Error::Usb(e)),
         }
     }
 
@@ -412,24 +419,26 @@ impl MaschineMK3 {
     }
 
     // === Input Management ===
-    
+
     /// Start monitoring input with a callback (non-blocking)
     pub fn start_input_monitoring<F>(&mut self, callback: F) -> Result<()>
     where
         F: Fn(InputEvent) + Send + 'static,
     {
         if self.input_thread.is_some() {
-            return Err(MK3Error::InvalidData("Input monitoring already running".to_string()));
+            return Err(MK3Error::InvalidData(
+                "Input monitoring already running".to_string(),
+            ));
         }
 
         let (sender, receiver) = mpsc::channel();
         self.input_event_receiver = Some(receiver);
-        
+
         // Clone the device handle for the thread
         let device = self.device_handle.device();
         let mut thread_device_handle = device.open()?;
         Self::claim_interface_with_detach(&mut thread_device_handle, HID_INTERFACE)?;
-        
+
         let stop_signal = Arc::clone(&self.input_stop_signal);
         let mut tracker = InputTracker::new();
 
@@ -446,7 +455,8 @@ impl MaschineMK3 {
                 let data = {
                     let mut buffer = vec![0u8; 64];
                     let timeout = Duration::from_millis(100);
-                    match thread_device_handle.read_interrupt(INPUT_ENDPOINT, &mut buffer, timeout) {
+                    match thread_device_handle.read_interrupt(INPUT_ENDPOINT, &mut buffer, timeout)
+                    {
                         Ok(bytes_read) => {
                             buffer.truncate(bytes_read);
                             buffer
@@ -497,19 +507,19 @@ impl MaschineMK3 {
         }
 
         self.input_event_receiver = None;
-        
+
         // Reset stop signal for future use
         if let Ok(mut stop) = self.input_stop_signal.lock() {
             *stop = false;
         }
-        
+
         Ok(())
     }
 
     /// Poll for input events (blocking with timeout)
     pub fn poll_input_events(&mut self) -> Result<Vec<InputEvent>> {
         let data = self.read_input()?;
-        
+
         if data.is_empty() {
             return Ok(Vec::new());
         }
@@ -537,54 +547,131 @@ impl MaschineMK3 {
     }
 
     // === LED Management ===
-    
+
     /// Set individual button LED brightness
     pub fn set_button_led(&mut self, button: InputElement, brightness: u8) -> Result<()> {
-        let old_value = match button {
-            InputElement::Play => self.current_button_leds.play,
-            _ => 0,
-        };
-        
-        if old_value != brightness {
-            match button {
-                InputElement::Play => self.current_button_leds.play = brightness,
-                _ => {},
+        match button {
+            InputElement::Play => self.current_button_leds.play = brightness,
+            InputElement::Rec => self.current_button_leds.rec = brightness,
+            InputElement::Stop => self.current_button_leds.stop = brightness,
+            InputElement::Restart => self.current_button_leds.restart = brightness,
+            InputElement::Erase => self.current_button_leds.erase = brightness,
+            InputElement::Tap => self.current_button_leds.tap = brightness,
+            InputElement::Follow => self.current_button_leds.follow = brightness,
+            InputElement::ChannelMidi => self.current_button_leds.channel_midi = brightness,
+            InputElement::Arranger => self.current_button_leds.arranger = brightness,
+            InputElement::ArrowLeft => self.current_button_leds.arrow_left = brightness,
+            InputElement::ArrowRight => self.current_button_leds.arrow_right = brightness,
+            InputElement::FileSave => self.current_button_leds.file_save = brightness,
+            InputElement::Settings => self.current_button_leds.settings = brightness,
+            InputElement::Macro => self.current_button_leds.macro_set = brightness,
+            InputElement::Auto => self.current_button_leds.auto = brightness,
+            InputElement::Plugin => self.current_button_leds.plugin_instance = brightness,
+            InputElement::Mixer => self.current_button_leds.mixer = brightness,
+            InputElement::Sampling => self.current_button_leds.sampler = brightness,
+            InputElement::Volume => self.current_button_leds.volume = brightness,
+            InputElement::Swing => self.current_button_leds.swing = brightness,
+            InputElement::NoteRepeat => self.current_button_leds.note_repeat = brightness,
+            InputElement::Tempo => self.current_button_leds.tempo = brightness,
+            InputElement::Lock => self.current_button_leds.lock = brightness,
+            InputElement::Pitch => self.current_button_leds.pitch = brightness,
+            InputElement::Mod => self.current_button_leds.mod_ = brightness,
+            InputElement::Perform => self.current_button_leds.perform = brightness,
+            InputElement::Notes => self.current_button_leds.notes = brightness,
+            InputElement::Shift => self.current_button_leds.shift = brightness,
+            InputElement::FixedVel => self.current_button_leds.fixed_vel = brightness,
+            InputElement::PadMode => self.current_button_leds.pad_mode = brightness,
+            InputElement::Keyboard => self.current_button_leds.keyboard = brightness,
+            InputElement::Chords => self.current_button_leds.chords = brightness,
+            InputElement::Step => self.current_button_leds.step = brightness,
+            InputElement::Scene => self.current_button_leds.scene = brightness,
+            InputElement::Pattern => self.current_button_leds.pattern = brightness,
+            InputElement::Events => self.current_button_leds.events = brightness,
+            InputElement::Variation => self.current_button_leds.variation = brightness,
+            InputElement::Duplicate => self.current_button_leds.duplicate = brightness,
+            InputElement::Select => self.current_button_leds.select = brightness,
+            InputElement::Solo => self.current_button_leds.solo = brightness,
+            InputElement::Mute => self.current_button_leds.mute = brightness,
+            InputElement::DisplayButton1 => self.current_button_leds.display_button_1 = brightness,
+            InputElement::DisplayButton2 => self.current_button_leds.display_button_2 = brightness,
+            InputElement::DisplayButton3 => self.current_button_leds.display_button_3 = brightness,
+            InputElement::DisplayButton4 => self.current_button_leds.display_button_4 = brightness,
+            InputElement::DisplayButton5 => self.current_button_leds.display_button_5 = brightness,
+            InputElement::DisplayButton6 => self.current_button_leds.display_button_6 = brightness,
+            InputElement::DisplayButton7 => self.current_button_leds.display_button_7 = brightness,
+            InputElement::DisplayButton8 => self.current_button_leds.display_button_8 = brightness,
+            // For RGB LEDs, convert brightness to grayscale color
+            InputElement::GroupA => {
+                self.current_button_leds.group_a = MaschineLEDColor::from_brightness(brightness)
             }
-            self.led_state_dirty = true;
-            self.write_led_state()?;
+            InputElement::GroupB => {
+                self.current_button_leds.group_b = MaschineLEDColor::from_brightness(brightness)
+            }
+            InputElement::GroupC => {
+                self.current_button_leds.group_c = MaschineLEDColor::from_brightness(brightness)
+            }
+            InputElement::GroupD => {
+                self.current_button_leds.group_d = MaschineLEDColor::from_brightness(brightness)
+            }
+            InputElement::GroupE => {
+                self.current_button_leds.group_e = MaschineLEDColor::from_brightness(brightness)
+            }
+            InputElement::GroupF => {
+                self.current_button_leds.group_f = MaschineLEDColor::from_brightness(brightness)
+            }
+            InputElement::GroupG => {
+                self.current_button_leds.group_g = MaschineLEDColor::from_brightness(brightness)
+            }
+            InputElement::GroupH => {
+                self.current_button_leds.group_h = MaschineLEDColor::from_brightness(brightness)
+            }
+            InputElement::BrowserPlugin => {
+                self.current_button_leds.browser_plugin =
+                    MaschineLEDColor::from_brightness(brightness)
+            }
+            InputElement::EncoderUp => {
+                self.current_button_leds.nav_up = MaschineLEDColor::from_brightness(brightness)
+            }
+            InputElement::EncoderLeft => {
+                self.current_button_leds.nav_left = MaschineLEDColor::from_brightness(brightness)
+            }
+            InputElement::EncoderRight => {
+                self.current_button_leds.nav_right = MaschineLEDColor::from_brightness(brightness)
+            }
+            InputElement::EncoderDown => {
+                self.current_button_leds.nav_down = MaschineLEDColor::from_brightness(brightness)
+            }
+            _ => return Ok(()), // Elements that don't have LEDs
         }
+        self.led_state_dirty = true;
+        self.write_led_state()?;
         Ok(())
     }
 
-    /// Set individual button LED color
-    pub fn set_button_led_color(&mut self, button: InputElement, color: MaschineLEDColor) -> Result<()> {
-        let old_color = match button {
-            InputElement::GroupA => self.current_button_leds.group_a,
-            InputElement::GroupB => self.current_button_leds.group_b,
-            InputElement::GroupC => self.current_button_leds.group_c,
-            InputElement::GroupD => self.current_button_leds.group_d,
-            InputElement::GroupE => self.current_button_leds.group_e,
-            InputElement::GroupF => self.current_button_leds.group_f,
-            InputElement::GroupG => self.current_button_leds.group_g,
-            InputElement::GroupH => self.current_button_leds.group_h,
-            _ => MaschineLEDColor::black(),
-        };
-        
-        if old_color != color {
-            match button {
-                InputElement::GroupA => self.current_button_leds.group_a = color,
-                InputElement::GroupB => self.current_button_leds.group_b = color,
-                InputElement::GroupC => self.current_button_leds.group_c = color,
-                InputElement::GroupD => self.current_button_leds.group_d = color,
-                InputElement::GroupE => self.current_button_leds.group_e = color,
-                InputElement::GroupF => self.current_button_leds.group_f = color,
-                InputElement::GroupG => self.current_button_leds.group_g = color,
-                InputElement::GroupH => self.current_button_leds.group_h = color,
-                _ => {},
-            }
-            self.led_state_dirty = true;
-            self.write_led_state()?;
+    /// Set individual button LED color (for RGB LEDs only)
+    pub fn set_button_led_color(
+        &mut self,
+        button: InputElement,
+        color: MaschineLEDColor,
+    ) -> Result<()> {
+        match button {
+            InputElement::GroupA => self.current_button_leds.group_a = color,
+            InputElement::GroupB => self.current_button_leds.group_b = color,
+            InputElement::GroupC => self.current_button_leds.group_c = color,
+            InputElement::GroupD => self.current_button_leds.group_d = color,
+            InputElement::GroupE => self.current_button_leds.group_e = color,
+            InputElement::GroupF => self.current_button_leds.group_f = color,
+            InputElement::GroupG => self.current_button_leds.group_g = color,
+            InputElement::GroupH => self.current_button_leds.group_h = color,
+            InputElement::BrowserPlugin => self.current_button_leds.browser_plugin = color,
+            InputElement::EncoderUp => self.current_button_leds.nav_up = color,
+            InputElement::EncoderLeft => self.current_button_leds.nav_left = color,
+            InputElement::EncoderRight => self.current_button_leds.nav_right = color,
+            InputElement::EncoderDown => self.current_button_leds.nav_down = color,
+            _ => return Ok(()), // Elements that don't have RGB LEDs
         }
+        self.led_state_dirty = true;
+        self.write_led_state()?;
         Ok(())
     }
 
@@ -593,7 +680,7 @@ impl MaschineMK3 {
         if pad_number > 15 {
             return Err(MK3Error::InvalidData("Pad number must be 0-15".to_string()));
         }
-        
+
         let old_color = self.current_pad_leds.pad_leds[pad_number as usize];
         if old_color != color {
             self.current_pad_leds.pad_leds[pad_number as usize] = color;
@@ -606,14 +693,14 @@ impl MaschineMK3 {
     /// Set all button LEDs to the same brightness
     pub fn set_all_button_leds(&mut self, brightness: u8) -> Result<()> {
         let mut changed = false;
-        
+
         // Set all brightness-based LEDs
         if self.current_button_leds.play != brightness {
             self.current_button_leds.play = brightness;
             changed = true;
         }
         // Add more brightness-based buttons as needed
-        
+
         if changed {
             self.led_state_dirty = true;
             self.write_led_state()?;
@@ -624,14 +711,14 @@ impl MaschineMK3 {
     /// Set all pad LEDs to the same color
     pub fn set_all_pad_leds(&mut self, color: MaschineLEDColor) -> Result<()> {
         let mut changed = false;
-        
+
         for i in 0..16 {
             if self.current_pad_leds.pad_leds[i] != color {
                 self.current_pad_leds.pad_leds[i] = color;
                 changed = true;
             }
         }
-        
+
         if changed {
             self.led_state_dirty = true;
             self.write_led_state()?;
@@ -674,18 +761,18 @@ impl MaschineMK3 {
     }
 
     // === Helper methods ===
-    
+
     fn write_led_state(&mut self) -> Result<()> {
         let button_packet = self.current_button_leds.to_packet();
         self.write_led_data(&button_packet)?;
-        
+
         let pad_packet = self.current_pad_leds.to_packet();
         self.write_led_data(&pad_packet)?;
-        
+
         self.led_state_dirty = false;
         Ok(())
     }
-    
+
     fn write_led_data(&self, data: &[u8]) -> Result<()> {
         #[cfg(target_os = "windows")]
         {
@@ -694,26 +781,31 @@ impl MaschineMK3 {
                     Ok(_) => return Ok(()),
                     Err(e) => {
                         eprintln!("HID LED write failed: {}", e);
-                        return Err(MK3Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e)));
+                        return Err(MK3Error::Io(std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            e,
+                        )));
                     }
                 }
             }
         }
-        
+
         let timeout = Duration::from_millis(100);
-        match self.device_handle.write_interrupt(OUTPUT_ENDPOINT, data, timeout) {
+        match self
+            .device_handle
+            .write_interrupt(OUTPUT_ENDPOINT, data, timeout)
+        {
             Ok(_) => Ok(()),
-            Err(e) => Err(MK3Error::Usb(e))
+            Err(e) => Err(MK3Error::Usb(e)),
         }
     }
-    
 }
 
 impl Drop for MaschineMK3 {
     fn drop(&mut self) {
         // Stop input monitoring
         let _ = self.stop_input_monitoring();
-        
+
         // Release interfaces on cleanup
         let _ = self.device_handle.release_interface(HID_INTERFACE);
         let _ = self.device_handle.release_interface(DISPLAY_INTERFACE);

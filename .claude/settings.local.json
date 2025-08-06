@@ -6,7 +6,8 @@
       "WebFetch(domain:docs.anthropic.com)",
       "Bash(git add:*)",
       "Bash(cargo check:*)",
-      "Bash(cargo build:*)"
+      "Bash(cargo build:*)",
+      "Bash(cargo test)"
     ],
     "deny": []
   }

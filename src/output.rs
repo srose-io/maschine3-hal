@@ -170,6 +170,16 @@ impl MaschineLEDColor {
         Self::new(0, false)
     }
 
+    /// Create a grayscale color from brightness value (0-255)
+    pub fn from_brightness(brightness: u8) -> Self {
+        if brightness == 0 {
+            Self::black()
+        } else {
+            // Use white with brightness control
+            Self::new(16, brightness > 127)
+        }
+    }
+
     /// Get RGB values for this Maschine color (for preview/debugging)
     pub fn to_rgb(&self) -> (u8, u8, u8) {
         // Special case: black/off
@@ -206,6 +216,7 @@ pub struct ButtonLedState {
     pub arrow_right: LedBrightness,
     pub file_save: LedBrightness,
     pub settings: LedBrightness,
+    pub auto: LedBrightness,
     pub macro_set: LedBrightness,
     pub display_button_1: LedBrightness,
     pub display_button_2: LedBrightness,
@@ -272,7 +283,7 @@ pub struct PadLedState {
 impl ButtonLedState {
     /// Convert to Type 0x80 packet (62 bytes)
     pub fn to_packet(&self) -> Vec<u8> {
-        let mut packet = vec![0u8; 62];
+        let mut packet = vec![0u8; 63];
         packet[0] = 0x80; // Packet type
 
         // Single-color LEDs (according to documentation order)
@@ -286,62 +297,63 @@ impl ButtonLedState {
         packet[8] = self.arrow_right;
         packet[9] = self.file_save;
         packet[10] = self.settings;
-        packet[11] = self.macro_set;
-        packet[12] = self.display_button_1;
-        packet[13] = self.display_button_2;
-        packet[14] = self.display_button_3;
-        packet[15] = self.display_button_4;
-        packet[16] = self.display_button_5;
-        packet[17] = self.display_button_6;
-        packet[18] = self.display_button_7;
-        packet[19] = self.display_button_8;
-        packet[20] = self.volume;
-        packet[21] = self.swing;
-        packet[22] = self.note_repeat;
-        packet[23] = self.tempo;
-        packet[24] = self.lock;
-        packet[25] = self.pitch;
-        packet[26] = self.mod_;
-        packet[27] = self.perform;
-        packet[28] = self.notes;
+        packet[11] = self.auto;
+        packet[12] = self.macro_set;
+        packet[13] = self.display_button_1;
+        packet[14] = self.display_button_2;
+        packet[15] = self.display_button_3;
+        packet[16] = self.display_button_4;
+        packet[17] = self.display_button_5;
+        packet[18] = self.display_button_6;
+        packet[19] = self.display_button_7;
+        packet[20] = self.display_button_8;
+        packet[21] = self.volume;
+        packet[22] = self.swing;
+        packet[23] = self.note_repeat;
+        packet[24] = self.tempo;
+        packet[25] = self.lock;
+        packet[26] = self.pitch;
+        packet[27] = self.mod_;
+        packet[28] = self.perform;
+        packet[29] = self.notes;
 
         // Group RGB LEDs (simplified - need proper RGB mapping)
-        packet[29] = self.group_a.to_led_value();
-        packet[30] = self.group_b.to_led_value();
-        packet[31] = self.group_c.to_led_value();
-        packet[32] = self.group_d.to_led_value();
-        packet[33] = self.group_e.to_led_value();
-        packet[34] = self.group_f.to_led_value();
-        packet[35] = self.group_g.to_led_value();
-        packet[36] = self.group_h.to_led_value();
+        packet[30] = self.group_a.to_led_value();
+        packet[31] = self.group_b.to_led_value();
+        packet[32] = self.group_c.to_led_value();
+        packet[33] = self.group_d.to_led_value();
+        packet[34] = self.group_e.to_led_value();
+        packet[35] = self.group_f.to_led_value();
+        packet[36] = self.group_g.to_led_value();
+        packet[37] = self.group_h.to_led_value();
 
-        packet[37] = self.restart;
-        packet[38] = self.erase;
-        packet[39] = self.tap;
-        packet[40] = self.follow;
-        packet[41] = self.play;
-        packet[42] = self.rec;
-        packet[43] = self.stop;
-        packet[44] = self.shift;
-        packet[45] = self.fixed_vel;
-        packet[46] = self.pad_mode;
-        packet[47] = self.keyboard;
-        packet[48] = self.chords;
-        packet[49] = self.step;
-        packet[50] = self.scene;
-        packet[51] = self.pattern;
-        packet[52] = self.events;
-        packet[53] = self.variation;
-        packet[54] = self.duplicate;
-        packet[55] = self.select;
-        packet[56] = self.solo;
-        packet[57] = self.mute;
+        packet[38] = self.restart;
+        packet[39] = self.erase;
+        packet[40] = self.tap;
+        packet[41] = self.follow;
+        packet[42] = self.play;
+        packet[43] = self.rec;
+        packet[44] = self.stop;
+        packet[45] = self.shift;
+        packet[46] = self.fixed_vel;
+        packet[47] = self.pad_mode;
+        packet[48] = self.keyboard;
+        packet[49] = self.chords;
+        packet[50] = self.step;
+        packet[51] = self.scene;
+        packet[52] = self.pattern;
+        packet[53] = self.events;
+        packet[54] = self.variation;
+        packet[55] = self.duplicate;
+        packet[56] = self.select;
+        packet[57] = self.solo;
+        packet[58] = self.mute;
 
         // Navigation RGB LEDs
-        packet[58] = self.nav_up.to_led_value();
-        packet[59] = self.nav_left.to_led_value();
-        packet[60] = self.nav_right.to_led_value();
-        packet[61] = self.nav_down.to_led_value();
+        packet[59] = self.nav_up.to_led_value();
+        packet[60] = self.nav_left.to_led_value();
+        packet[61] = self.nav_right.to_led_value();
+        packet[62] = self.nav_down.to_led_value();
 
         packet
     }

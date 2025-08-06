@@ -4,8 +4,6 @@
 
 The Maschine MK3 Buttons and Pads are transmitting on `Interface #4`, `Endpoint 0x83`.
 
-
-
 ## Protocol Overview
 
 The first byte indicates the type of the transmission.
@@ -359,12 +357,15 @@ As such, reading the (absolute) position for the knobs (0x12-0x27) is very easy.
     </tr>
 </table>
 
-
 ### Pads
 
-Pads don't have a fixed position in the protocol. Instead, the first pad
-hit is transmitted first, up to a maximum of 21(?) pad events. Probably
-this is to allow for multiple hits in one transmission cycle.
+The Maschine MK3 pads support velocity-sensitive hits and polyphonic aftertouch.
+Pad events are transmitted as groups of 3 bytes per event, with multiple events
+possible in a single packet to handle simultaneous hits and continuous pressure data.
+
+#### Pad Event Structure
+
+Each pad event consists of 3 bytes:
 
 <table style="whitespace: nowrap;">
     <tr>
@@ -378,40 +379,53 @@ this is to allow for multiple hits in one transmission cycle.
        <td style="white-space:nowrap;font-family:monospace;"> Always 02 for Pads</td>
     </tr>
     <tr>
-        <td style="white-space:nowrap;font-family:monospace;text-align: center;"> 1 </td>
+        <td style="white-space:nowrap;font-family:monospace;text-align: center;"> 3n+1 </td>
         <td style="white-space:nowrap;font-family:monospace;">
-           Pad Number (Numbered from top right to bottom left)
+           Pad Number (0-15, numbered from top-left to bottom-right)
         </td>
     </tr>
     <tr>
-        <td style="white-space:nowrap;font-family:monospace;text-align: center;"> 2 </td>
+        <td style="white-space:nowrap;font-family:monospace;text-align: center;"> 3n+2 </td>
         <td style="white-space:nowrap;font-family:monospace;">
-           Pad Data A (not yet reverse engineered)
+           Event Type + Velocity/Pressure High Bits<br/>
+           Bit 7-4: Event type<br/>
+           Bit 3-0: Velocity/Pressure bits 11-8
         </td>
     </tr>
     <tr>
-        <td style="white-space:nowrap;font-family:monospace;text-align: center;"> 3 </td>
+        <td style="white-space:nowrap;font-family:monospace;text-align: center;"> 3n+3 </td>
         <td style="white-space:nowrap;font-family:monospace;">
-           Pad Data B (not yet reverse engineered)
-        </td>
-    </tr>
-    <tr>
-        <td style="white-space:nowrap;font-family:monospace;text-align: center;"> n+0 </td>
-        <td style="white-space:nowrap;font-family:monospace;">
-           Pad Number (Numbered from top right to bottom left)
-        </td>
-    </tr>
-    <tr>
-        <td style="white-space:nowrap;font-family:monospace;text-align: center;"> n+1 </td>
-        <td style="white-space:nowrap;font-family:monospace;">
-           Pad Data A (not yet reverse engineered)
-        </td>
-    </tr>
-    <tr>
-        <td style="white-space:nowrap;font-family:monospace;text-align: center;"> n+2 </td>
-        <td style="white-space:nowrap;font-family:monospace;">
-           Pad Data B (not yet reverse engineered)
+           Velocity/Pressure Low Byte (bits 7-0)
         </td>
     </tr>
 </table>
 
+#### Event Types (Byte 2, bits 7-4)
+
+- **0x1 (0001)**: Initial pad hit
+- **0x2 (0010)**: Touch only release
+- **0x3 (0011)**: Pad release (after initial hit)
+- **0x4 (0100)**: Aftertouch/pressure data
+
+#### Velocity/Pressure Value
+
+The velocity or pressure value is 12-bit (0-4095):
+
+- **High 4 bits**: Lower nibble of byte 2 (bits 3-0)
+- **Low 8 bits**: All of byte 3
+
+Example calculations:
+
+- Bytes: `0x4F, 0xFD` → Event type 0x4 (aftertouch), pressure = 0xFFD (4093)
+- Bytes: `0x11, 0x03` → Event type 0x1 (hit), velocity = 0x103 (259)
+
+#### Pad Numbering
+
+Pads are numbered 0-15 in a 4x4 grid, starting from top-left:
+
+```
+[  0 ] [  1 ] [  2 ] [  3 ]
+[  4 ] [  5 ] [  6 ] [  7 ]
+[  8 ] [  9 ] [ 10 ] [ 11 ]
+[ 12 ] [ 13 ] [ 14 ] [ 15 ]
+```

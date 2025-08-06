@@ -321,6 +321,25 @@ impl InputElement {
             InputElement::MasterVolume => "Master Volume",
         }
     }
+
+    pub fn has_color(&self) -> bool {
+        match self {
+            InputElement::GroupA => true,
+            InputElement::GroupB => true,
+            InputElement::GroupC => true,
+            InputElement::GroupD => true,
+            InputElement::GroupE => true,
+            InputElement::GroupF => true,
+            InputElement::GroupG => true,
+            InputElement::GroupH => true,
+            InputElement::BrowserPlugin => true,
+            InputElement::EncoderUp => true,
+            InputElement::EncoderLeft => true,
+            InputElement::EncoderRight => true,
+            InputElement::EncoderDown => true,
+            _ => false,
+        }
+    }
 }
 
 /// Input event types
@@ -619,25 +638,79 @@ impl InputState {
     /// Get all currently active (pressed) buttons
     pub fn get_active_buttons(&self) -> Vec<InputElement> {
         let all_buttons = [
-            InputElement::Play, InputElement::Rec, InputElement::Stop, InputElement::Restart,
-            InputElement::Erase, InputElement::Tap, InputElement::Follow,
-            InputElement::GroupA, InputElement::GroupB, InputElement::GroupC, InputElement::GroupD,
-            InputElement::GroupE, InputElement::GroupF, InputElement::GroupG, InputElement::GroupH,
-            InputElement::Notes, InputElement::Volume, InputElement::Swing, InputElement::Tempo,
-            InputElement::NoteRepeat, InputElement::Lock, InputElement::PadMode, InputElement::Keyboard,
-            InputElement::Chords, InputElement::Step, InputElement::FixedVel, InputElement::Scene,
-            InputElement::Pattern, InputElement::Events, InputElement::Variation, InputElement::Duplicate,
-            InputElement::Select, InputElement::Solo, InputElement::Mute, InputElement::Pitch,
-            InputElement::Mod, InputElement::Perform, InputElement::Shift, InputElement::EncoderPush,
-            InputElement::EncoderUp, InputElement::EncoderDown, InputElement::EncoderLeft, InputElement::EncoderRight,
-            InputElement::DisplayButton1, InputElement::DisplayButton2, InputElement::DisplayButton3, InputElement::DisplayButton4,
-            InputElement::DisplayButton5, InputElement::DisplayButton6, InputElement::DisplayButton7, InputElement::DisplayButton8,
-            InputElement::ChannelMidi, InputElement::Arranger, InputElement::BrowserPlugin,
-            InputElement::ArrowLeft, InputElement::ArrowRight, InputElement::FileSave, InputElement::Settings,
-            InputElement::Macro, InputElement::Plugin, InputElement::Mixer, InputElement::Sampling, InputElement::Auto,
-            InputElement::PedalConnected, InputElement::MicrophoneConnected,
-            InputElement::Knob1Touched, InputElement::Knob2Touched, InputElement::Knob3Touched, InputElement::Knob4Touched,
-            InputElement::Knob5Touched, InputElement::Knob6Touched, InputElement::Knob7Touched, InputElement::Knob8Touched,
+            InputElement::Play,
+            InputElement::Rec,
+            InputElement::Stop,
+            InputElement::Restart,
+            InputElement::Erase,
+            InputElement::Tap,
+            InputElement::Follow,
+            InputElement::GroupA,
+            InputElement::GroupB,
+            InputElement::GroupC,
+            InputElement::GroupD,
+            InputElement::GroupE,
+            InputElement::GroupF,
+            InputElement::GroupG,
+            InputElement::GroupH,
+            InputElement::Notes,
+            InputElement::Volume,
+            InputElement::Swing,
+            InputElement::Tempo,
+            InputElement::NoteRepeat,
+            InputElement::Lock,
+            InputElement::PadMode,
+            InputElement::Keyboard,
+            InputElement::Chords,
+            InputElement::Step,
+            InputElement::FixedVel,
+            InputElement::Scene,
+            InputElement::Pattern,
+            InputElement::Events,
+            InputElement::Variation,
+            InputElement::Duplicate,
+            InputElement::Select,
+            InputElement::Solo,
+            InputElement::Mute,
+            InputElement::Pitch,
+            InputElement::Mod,
+            InputElement::Perform,
+            InputElement::Shift,
+            InputElement::EncoderPush,
+            InputElement::EncoderUp,
+            InputElement::EncoderDown,
+            InputElement::EncoderLeft,
+            InputElement::EncoderRight,
+            InputElement::DisplayButton1,
+            InputElement::DisplayButton2,
+            InputElement::DisplayButton3,
+            InputElement::DisplayButton4,
+            InputElement::DisplayButton5,
+            InputElement::DisplayButton6,
+            InputElement::DisplayButton7,
+            InputElement::DisplayButton8,
+            InputElement::ChannelMidi,
+            InputElement::Arranger,
+            InputElement::BrowserPlugin,
+            InputElement::ArrowLeft,
+            InputElement::ArrowRight,
+            InputElement::FileSave,
+            InputElement::Settings,
+            InputElement::Macro,
+            InputElement::Plugin,
+            InputElement::Mixer,
+            InputElement::Sampling,
+            InputElement::Auto,
+            InputElement::PedalConnected,
+            InputElement::MicrophoneConnected,
+            InputElement::Knob1Touched,
+            InputElement::Knob2Touched,
+            InputElement::Knob3Touched,
+            InputElement::Knob4Touched,
+            InputElement::Knob5Touched,
+            InputElement::Knob6Touched,
+            InputElement::Knob7Touched,
+            InputElement::Knob8Touched,
             InputElement::MainKnobTouched,
         ];
 
@@ -671,7 +744,9 @@ impl InputState {
     /// Get all non-zero audio control values with their elements
     pub fn get_active_audio(&self) -> Vec<(InputElement, u16)> {
         let audio_elements = [
-            InputElement::MicGain, InputElement::HeadphoneVolume, InputElement::MasterVolume,
+            InputElement::MicGain,
+            InputElement::HeadphoneVolume,
+            InputElement::MasterVolume,
         ];
 
         audio_elements
@@ -720,9 +795,15 @@ impl InputTracker {
         self.frame_count += 1;
 
         let prev_state = self.previous_state.take().unwrap_or_default();
-        
+
         // Check button events
-        Self::check_button_events_static(&mut events, &prev_state, &current_state, &mut self.held_buttons, self.frame_count);
+        Self::check_button_events_static(
+            &mut events,
+            &prev_state,
+            &current_state,
+            &mut self.held_buttons,
+            self.frame_count,
+        );
 
         // Check knob/value events - but skip on first update to avoid spurious events from initial hardware state
         if !self.is_first_update {
@@ -755,13 +836,25 @@ impl InputEvent {
             InputEvent::ButtonPressed(element) => format!("{} pressed", element.name()),
             InputEvent::ButtonReleased(element) => format!("{} released", element.name()),
             InputEvent::ButtonHeld(element) => format!("{} held", element.name()),
-            InputEvent::KnobChanged { element, value, delta } => {
+            InputEvent::KnobChanged {
+                element,
+                value,
+                delta,
+            } => {
                 format!("{} → {} (Δ{})", element.name(), value, delta)
             }
-            InputEvent::AudioChanged { element, value, delta } => {
+            InputEvent::AudioChanged {
+                element,
+                value,
+                delta,
+            } => {
                 format!("{} → {} (Δ{})", element.name(), value, delta)
             }
-            InputEvent::PadHit { pad_number, velocity, pressure } => {
+            InputEvent::PadHit {
+                pad_number,
+                velocity,
+                pressure,
+            } => {
                 format!(
                     "Pad {} ({}) - velocity:{} pressure:{}",
                     pad_number + 1,
@@ -777,10 +870,10 @@ impl InputEvent {
     fn get_pad_position(pad_num: u8) -> &'static str {
         // Pads are numbered 0-15, from top-right to bottom-left
         match pad_num {
-            0 => "TR",  // Top Right
+            0 => "TR", // Top Right
             1 => "T2",
             2 => "T3",
-            3 => "TL",  // Top Left
+            3 => "TL", // Top Left
             4 => "2R",
             5 => "22",
             6 => "23",
@@ -1012,6 +1105,18 @@ impl PadState {
                 offset += 3;
                 continue;
             }
+
+            if pad_number == 0 && data_a == 0 && data_b == 0 {
+                offset += 3;
+                continue;
+            }
+
+            //Debug the data thats coming in for pad hits, show everything coming in
+            //Show in binary, pad the bits out to 8 bits
+            println!(
+                "Pad Hit: {:08b}, {:08b}, {:08b}",
+                pad_number, data_a, data_b
+            );
 
             //pad_number = pad_number.saturating_sub(1);
             // Check if this is a valid pad hit (pad numbers 0-15)
