@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo --version)",
+      "Bash(cargo clippy:*)",
+      "WebFetch(domain:docs.anthropic.com)",
+      "Bash(git add:*)"
+    ],
+    "deny": []
+  }
+}

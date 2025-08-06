@@ -54,9 +54,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // Parse pad packet
                         match PadState::from_pad_packet(&data) {
                             Ok(pads) => {
-                                if !pads.hits.is_empty() {
+                                let pad_events = input_tracker.update_pads(pads);
+                                if !pad_events.is_empty() {
                                     any_activity = true;
-                                    print_pad_state(&pads, frame_count);
+                                    print_input_events(&pad_events, frame_count);
                                 }
                             }
                             Err(e) => println!("❌ Pad parse error: {}", e),
@@ -116,6 +117,9 @@ fn print_input_events(events: &[InputEvent], frame: u32) {
             } => {
                 println!("  🔊 {} → {} (Δ{})", element.name(), value, delta);
             }
+            InputEvent::PadHit { .. } => {
+                println!("  🥁 {}", event.description());
+            }
         }
     }
 }
@@ -156,57 +160,5 @@ fn print_current_state(input: &InputState) {
             "  👆 Touch Strip: F1({},{},{},{}) F2({},{},{},{})",
             f1a, f1b, f1c, f1d, f2a, f2b, f2c, f2d
         );
-    }
-}
-
-fn print_pad_state(pads: &PadState, frame: u32) {
-    println!(
-        "\n🥁 PAD HITS [Frame {}] ===============================",
-        frame
-    );
-
-    for (i, hit) in pads.hits.iter().enumerate() {
-        let pad_name = match hit.pad_number {
-            0..=15 => format!(
-                "Pad #{} ({})",
-                hit.pad_number + 1,
-                get_pad_position(hit.pad_number)
-            ),
-            _ => format!("Unknown Pad {}", hit.pad_number),
-        };
-
-        println!(
-            "  {} - Velocity: {} Pressure: {} (raw: {}, {})",
-            pad_name, hit.data_a, hit.data_b, hit.data_a, hit.data_b
-        );
-
-        // Only show first 5 hits to avoid spam
-        if i >= 4 {
-            println!("  ... and {} more hits", pads.hits.len() - 5);
-            break;
-        }
-    }
-}
-
-fn get_pad_position(pad_num: u8) -> &'static str {
-    // Pads are numbered 0-15, from top-right to bottom-left
-    match pad_num {
-        0 => "TR", // Top Right
-        1 => "T2",
-        2 => "T3",
-        3 => "TL", // Top Left
-        4 => "2R",
-        5 => "22",
-        6 => "23",
-        7 => "2L",
-        8 => "3R",
-        9 => "32",
-        10 => "33",
-        11 => "3L",
-        12 => "BR", // Bottom Right
-        13 => "B2",
-        14 => "B3",
-        15 => "BL", // Bottom Left
-        _ => "??",
     }
 }

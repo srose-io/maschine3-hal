@@ -339,6 +339,11 @@ pub enum InputEvent {
         value: u16,
         delta: i32,
     },
+    PadHit {
+        pad_number: u8,
+        velocity: u8,
+        pressure: u8,
+    },
 }
 
 /// Input change tracker for delta detection
@@ -729,6 +734,71 @@ impl InputTracker {
         events
     }
 
+    /// Update the tracker with pad events and return them as InputEvents
+    pub fn update_pads(&mut self, pad_state: PadState) -> Vec<InputEvent> {
+        pad_state
+            .hits
+            .into_iter()
+            .map(|hit| InputEvent::PadHit {
+                pad_number: hit.pad_number,
+                velocity: hit.data_a,
+                pressure: hit.data_b,
+            })
+            .collect()
+    }
+}
+
+impl InputEvent {
+    /// Get a human-readable description of this input event
+    pub fn description(&self) -> String {
+        match self {
+            InputEvent::ButtonPressed(element) => format!("{} pressed", element.name()),
+            InputEvent::ButtonReleased(element) => format!("{} released", element.name()),
+            InputEvent::ButtonHeld(element) => format!("{} held", element.name()),
+            InputEvent::KnobChanged { element, value, delta } => {
+                format!("{} → {} (Δ{})", element.name(), value, delta)
+            }
+            InputEvent::AudioChanged { element, value, delta } => {
+                format!("{} → {} (Δ{})", element.name(), value, delta)
+            }
+            InputEvent::PadHit { pad_number, velocity, pressure } => {
+                format!(
+                    "Pad {} ({}) - velocity:{} pressure:{}",
+                    pad_number + 1,
+                    Self::get_pad_position(*pad_number),
+                    velocity,
+                    pressure
+                )
+            }
+        }
+    }
+
+    /// Get the grid position name for a pad number (0-15)
+    fn get_pad_position(pad_num: u8) -> &'static str {
+        // Pads are numbered 0-15, from top-right to bottom-left
+        match pad_num {
+            0 => "TR",  // Top Right
+            1 => "T2",
+            2 => "T3",
+            3 => "TL",  // Top Left
+            4 => "2R",
+            5 => "22",
+            6 => "23",
+            7 => "2L",
+            8 => "3R",
+            9 => "32",
+            10 => "33",
+            11 => "3L",
+            12 => "BR", // Bottom Right
+            13 => "B2",
+            14 => "B3",
+            15 => "BL", // Bottom Left
+            _ => "??",
+        }
+    }
+}
+
+impl InputTracker {
     fn check_button_events_static(
         events: &mut Vec<InputEvent>,
         prev: &InputState,
