@@ -1,4 +1,5 @@
 use crate::error::{MK3Error, Result};
+use std::collections::HashMap;
 
 /// Represents the state of all buttons on the Maschine MK3
 #[derive(Debug, Clone, Default)]
@@ -131,6 +132,222 @@ pub struct AudioState {
     pub mic_gain: u16,
     pub headphone_volume: u16,
     pub master_volume: u16,
+}
+
+/// Enumeration of all input elements for event-based input
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum InputElement {
+    // Buttons
+    Play,
+    Rec,
+    Stop,
+    Restart,
+    Erase,
+    Tap,
+    Follow,
+    GroupA,
+    GroupB,
+    GroupC,
+    GroupD,
+    GroupE,
+    GroupF,
+    GroupG,
+    GroupH,
+    Notes,
+    Volume,
+    Swing,
+    Tempo,
+    NoteRepeat,
+    Lock,
+    PadMode,
+    Keyboard,
+    Chords,
+    Step,
+    FixedVel,
+    Scene,
+    Pattern,
+    Events,
+    Variation,
+    Duplicate,
+    Select,
+    Solo,
+    Mute,
+    Pitch,
+    Mod,
+    Perform,
+    Shift,
+    EncoderPush,
+    EncoderUp,
+    EncoderDown,
+    EncoderLeft,
+    EncoderRight,
+    DisplayButton1,
+    DisplayButton2,
+    DisplayButton3,
+    DisplayButton4,
+    DisplayButton5,
+    DisplayButton6,
+    DisplayButton7,
+    DisplayButton8,
+    ChannelMidi,
+    Arranger,
+    BrowserPlugin,
+    ArrowLeft,
+    ArrowRight,
+    FileSave,
+    Settings,
+    Macro,
+    Plugin,
+    Mixer,
+    Sampling,
+    Auto,
+    PedalConnected,
+    MicrophoneConnected,
+    // Knobs
+    Knob1,
+    Knob2,
+    Knob3,
+    Knob4,
+    Knob5,
+    Knob6,
+    Knob7,
+    Knob8,
+    MainEncoder,
+    // Touch detection
+    Knob1Touched,
+    Knob2Touched,
+    Knob3Touched,
+    Knob4Touched,
+    Knob5Touched,
+    Knob6Touched,
+    Knob7Touched,
+    Knob8Touched,
+    MainKnobTouched,
+    // Audio controls
+    MicGain,
+    HeadphoneVolume,
+    MasterVolume,
+}
+
+impl InputElement {
+    /// Get the display name for this input element
+    pub fn name(&self) -> &'static str {
+        match self {
+            InputElement::Play => "Play",
+            InputElement::Rec => "Rec",
+            InputElement::Stop => "Stop",
+            InputElement::Restart => "Restart",
+            InputElement::Erase => "Erase",
+            InputElement::Tap => "Tap",
+            InputElement::Follow => "Follow",
+            InputElement::GroupA => "Group A",
+            InputElement::GroupB => "Group B",
+            InputElement::GroupC => "Group C",
+            InputElement::GroupD => "Group D",
+            InputElement::GroupE => "Group E",
+            InputElement::GroupF => "Group F",
+            InputElement::GroupG => "Group G",
+            InputElement::GroupH => "Group H",
+            InputElement::Notes => "Notes",
+            InputElement::Volume => "Volume",
+            InputElement::Swing => "Swing",
+            InputElement::Tempo => "Tempo",
+            InputElement::NoteRepeat => "Note Repeat",
+            InputElement::Lock => "Lock",
+            InputElement::PadMode => "Pad Mode",
+            InputElement::Keyboard => "Keyboard",
+            InputElement::Chords => "Chords",
+            InputElement::Step => "Step",
+            InputElement::FixedVel => "Fixed Vel",
+            InputElement::Scene => "Scene",
+            InputElement::Pattern => "Pattern",
+            InputElement::Events => "Events",
+            InputElement::Variation => "Variation",
+            InputElement::Duplicate => "Duplicate",
+            InputElement::Select => "Select",
+            InputElement::Solo => "Solo",
+            InputElement::Mute => "Mute",
+            InputElement::Pitch => "Pitch",
+            InputElement::Mod => "Mod",
+            InputElement::Perform => "Perform",
+            InputElement::Shift => "Shift",
+            InputElement::EncoderPush => "Encoder Push",
+            InputElement::EncoderUp => "Encoder Up",
+            InputElement::EncoderDown => "Encoder Down",
+            InputElement::EncoderLeft => "Encoder Left",
+            InputElement::EncoderRight => "Encoder Right",
+            InputElement::DisplayButton1 => "Display 1",
+            InputElement::DisplayButton2 => "Display 2",
+            InputElement::DisplayButton3 => "Display 3",
+            InputElement::DisplayButton4 => "Display 4",
+            InputElement::DisplayButton5 => "Display 5",
+            InputElement::DisplayButton6 => "Display 6",
+            InputElement::DisplayButton7 => "Display 7",
+            InputElement::DisplayButton8 => "Display 8",
+            InputElement::ChannelMidi => "Channel/MIDI",
+            InputElement::Arranger => "Arranger",
+            InputElement::BrowserPlugin => "Browser/Plugin",
+            InputElement::ArrowLeft => "Arrow Left",
+            InputElement::ArrowRight => "Arrow Right",
+            InputElement::FileSave => "File/Save",
+            InputElement::Settings => "Settings",
+            InputElement::Macro => "Macro",
+            InputElement::Plugin => "Plugin",
+            InputElement::Mixer => "Mixer",
+            InputElement::Sampling => "Sampling",
+            InputElement::Auto => "Auto",
+            InputElement::PedalConnected => "Pedal Connected",
+            InputElement::MicrophoneConnected => "Microphone Connected",
+            InputElement::Knob1 => "Knob 1",
+            InputElement::Knob2 => "Knob 2",
+            InputElement::Knob3 => "Knob 3",
+            InputElement::Knob4 => "Knob 4",
+            InputElement::Knob5 => "Knob 5",
+            InputElement::Knob6 => "Knob 6",
+            InputElement::Knob7 => "Knob 7",
+            InputElement::Knob8 => "Knob 8",
+            InputElement::MainEncoder => "Main Encoder",
+            InputElement::Knob1Touched => "Knob 1 Touch",
+            InputElement::Knob2Touched => "Knob 2 Touch",
+            InputElement::Knob3Touched => "Knob 3 Touch",
+            InputElement::Knob4Touched => "Knob 4 Touch",
+            InputElement::Knob5Touched => "Knob 5 Touch",
+            InputElement::Knob6Touched => "Knob 6 Touch",
+            InputElement::Knob7Touched => "Knob 7 Touch",
+            InputElement::Knob8Touched => "Knob 8 Touch",
+            InputElement::MainKnobTouched => "Main Knob Touch",
+            InputElement::MicGain => "Mic Gain",
+            InputElement::HeadphoneVolume => "Headphone Volume",
+            InputElement::MasterVolume => "Master Volume",
+        }
+    }
+}
+
+/// Input event types
+#[derive(Debug, Clone, PartialEq)]
+pub enum InputEvent {
+    ButtonPressed(InputElement),
+    ButtonReleased(InputElement),
+    ButtonHeld(InputElement),
+    KnobChanged {
+        element: InputElement,
+        value: u16,
+        delta: i32,
+    },
+    AudioChanged {
+        element: InputElement,
+        value: u16,
+        delta: i32,
+    },
+}
+
+/// Input change tracker for delta detection
+#[derive(Debug, Clone)]
+pub struct InputTracker {
+    previous_state: Option<InputState>,
+    held_buttons: HashMap<InputElement, u32>, // frame counter for held buttons
+    frame_count: u32,
+    is_first_update: bool,
 }
 
 /// Complete input state from Type 0x01 packets (buttons/knobs)
@@ -292,6 +509,415 @@ impl InputState {
         state.audio.master_volume = ((data[41] as u16) << 8) | (data[40] as u16);
 
         Ok(state)
+    }
+
+    /// Get the value of a specific button
+    pub fn get_button(&self, element: &InputElement) -> bool {
+        match element {
+            InputElement::Play => self.buttons.play,
+            InputElement::Rec => self.buttons.rec,
+            InputElement::Stop => self.buttons.stop,
+            InputElement::Restart => self.buttons.restart,
+            InputElement::Erase => self.buttons.erase,
+            InputElement::Tap => self.buttons.tap,
+            InputElement::Follow => self.buttons.follow,
+            InputElement::GroupA => self.buttons.group_a,
+            InputElement::GroupB => self.buttons.group_b,
+            InputElement::GroupC => self.buttons.group_c,
+            InputElement::GroupD => self.buttons.group_d,
+            InputElement::GroupE => self.buttons.group_e,
+            InputElement::GroupF => self.buttons.group_f,
+            InputElement::GroupG => self.buttons.group_g,
+            InputElement::GroupH => self.buttons.group_h,
+            InputElement::Notes => self.buttons.notes,
+            InputElement::Volume => self.buttons.volume,
+            InputElement::Swing => self.buttons.swing,
+            InputElement::Tempo => self.buttons.tempo,
+            InputElement::NoteRepeat => self.buttons.note_repeat,
+            InputElement::Lock => self.buttons.lock,
+            InputElement::PadMode => self.buttons.pad_mode,
+            InputElement::Keyboard => self.buttons.keyboard,
+            InputElement::Chords => self.buttons.chords,
+            InputElement::Step => self.buttons.step,
+            InputElement::FixedVel => self.buttons.fixed_vel,
+            InputElement::Scene => self.buttons.scene,
+            InputElement::Pattern => self.buttons.pattern,
+            InputElement::Events => self.buttons.events,
+            InputElement::Variation => self.buttons.variation,
+            InputElement::Duplicate => self.buttons.duplicate,
+            InputElement::Select => self.buttons.select,
+            InputElement::Solo => self.buttons.solo,
+            InputElement::Mute => self.buttons.mute,
+            InputElement::Pitch => self.buttons.pitch,
+            InputElement::Mod => self.buttons.mod_,
+            InputElement::Perform => self.buttons.perform,
+            InputElement::Shift => self.buttons.shift,
+            InputElement::EncoderPush => self.buttons.encoder_push,
+            InputElement::EncoderUp => self.buttons.encoder_up,
+            InputElement::EncoderDown => self.buttons.encoder_down,
+            InputElement::EncoderLeft => self.buttons.encoder_left,
+            InputElement::EncoderRight => self.buttons.encoder_right,
+            InputElement::DisplayButton1 => self.buttons.display_button_1,
+            InputElement::DisplayButton2 => self.buttons.display_button_2,
+            InputElement::DisplayButton3 => self.buttons.display_button_3,
+            InputElement::DisplayButton4 => self.buttons.display_button_4,
+            InputElement::DisplayButton5 => self.buttons.display_button_5,
+            InputElement::DisplayButton6 => self.buttons.display_button_6,
+            InputElement::DisplayButton7 => self.buttons.display_button_7,
+            InputElement::DisplayButton8 => self.buttons.display_button_8,
+            InputElement::ChannelMidi => self.buttons.channel_midi,
+            InputElement::Arranger => self.buttons.arranger,
+            InputElement::BrowserPlugin => self.buttons.browser_plugin,
+            InputElement::ArrowLeft => self.buttons.arrow_left,
+            InputElement::ArrowRight => self.buttons.arrow_right,
+            InputElement::FileSave => self.buttons.file_save,
+            InputElement::Settings => self.buttons.settings,
+            InputElement::Macro => self.buttons.macro_,
+            InputElement::Plugin => self.buttons.plugin,
+            InputElement::Mixer => self.buttons.mixer,
+            InputElement::Sampling => self.buttons.sampling,
+            InputElement::Auto => self.buttons.auto,
+            InputElement::PedalConnected => self.buttons.pedal_connected,
+            InputElement::MicrophoneConnected => self.buttons.microphone_connected,
+            InputElement::Knob1Touched => self.knobs.knob_1_touched,
+            InputElement::Knob2Touched => self.knobs.knob_2_touched,
+            InputElement::Knob3Touched => self.knobs.knob_3_touched,
+            InputElement::Knob4Touched => self.knobs.knob_4_touched,
+            InputElement::Knob5Touched => self.knobs.knob_5_touched,
+            InputElement::Knob6Touched => self.knobs.knob_6_touched,
+            InputElement::Knob7Touched => self.knobs.knob_7_touched,
+            InputElement::Knob8Touched => self.knobs.knob_8_touched,
+            InputElement::MainKnobTouched => self.knobs.main_knob_touched,
+            _ => false, // Non-button elements
+        }
+    }
+
+    /// Get the value of a specific knob or audio control
+    pub fn get_value(&self, element: &InputElement) -> u16 {
+        match element {
+            InputElement::Knob1 => self.knobs.knob_1,
+            InputElement::Knob2 => self.knobs.knob_2,
+            InputElement::Knob3 => self.knobs.knob_3,
+            InputElement::Knob4 => self.knobs.knob_4,
+            InputElement::Knob5 => self.knobs.knob_5,
+            InputElement::Knob6 => self.knobs.knob_6,
+            InputElement::Knob7 => self.knobs.knob_7,
+            InputElement::Knob8 => self.knobs.knob_8,
+            InputElement::MainEncoder => self.knobs.main_encoder as u16,
+            InputElement::MicGain => self.audio.mic_gain,
+            InputElement::HeadphoneVolume => self.audio.headphone_volume,
+            InputElement::MasterVolume => self.audio.master_volume,
+            _ => 0, // Non-value elements
+        }
+    }
+
+    /// Get all currently active (pressed) buttons
+    pub fn get_active_buttons(&self) -> Vec<InputElement> {
+        let all_buttons = [
+            InputElement::Play, InputElement::Rec, InputElement::Stop, InputElement::Restart,
+            InputElement::Erase, InputElement::Tap, InputElement::Follow,
+            InputElement::GroupA, InputElement::GroupB, InputElement::GroupC, InputElement::GroupD,
+            InputElement::GroupE, InputElement::GroupF, InputElement::GroupG, InputElement::GroupH,
+            InputElement::Notes, InputElement::Volume, InputElement::Swing, InputElement::Tempo,
+            InputElement::NoteRepeat, InputElement::Lock, InputElement::PadMode, InputElement::Keyboard,
+            InputElement::Chords, InputElement::Step, InputElement::FixedVel, InputElement::Scene,
+            InputElement::Pattern, InputElement::Events, InputElement::Variation, InputElement::Duplicate,
+            InputElement::Select, InputElement::Solo, InputElement::Mute, InputElement::Pitch,
+            InputElement::Mod, InputElement::Perform, InputElement::Shift, InputElement::EncoderPush,
+            InputElement::EncoderUp, InputElement::EncoderDown, InputElement::EncoderLeft, InputElement::EncoderRight,
+            InputElement::DisplayButton1, InputElement::DisplayButton2, InputElement::DisplayButton3, InputElement::DisplayButton4,
+            InputElement::DisplayButton5, InputElement::DisplayButton6, InputElement::DisplayButton7, InputElement::DisplayButton8,
+            InputElement::ChannelMidi, InputElement::Arranger, InputElement::BrowserPlugin,
+            InputElement::ArrowLeft, InputElement::ArrowRight, InputElement::FileSave, InputElement::Settings,
+            InputElement::Macro, InputElement::Plugin, InputElement::Mixer, InputElement::Sampling, InputElement::Auto,
+            InputElement::PedalConnected, InputElement::MicrophoneConnected,
+            InputElement::Knob1Touched, InputElement::Knob2Touched, InputElement::Knob3Touched, InputElement::Knob4Touched,
+            InputElement::Knob5Touched, InputElement::Knob6Touched, InputElement::Knob7Touched, InputElement::Knob8Touched,
+            InputElement::MainKnobTouched,
+        ];
+
+        all_buttons
+            .into_iter()
+            .filter(|element| self.get_button(element))
+            .collect()
+    }
+
+    /// Get all currently touched knobs with their values
+    pub fn get_active_knobs(&self) -> Vec<(InputElement, u16)> {
+        let knob_touch_pairs = [
+            (InputElement::Knob1, InputElement::Knob1Touched),
+            (InputElement::Knob2, InputElement::Knob2Touched),
+            (InputElement::Knob3, InputElement::Knob3Touched),
+            (InputElement::Knob4, InputElement::Knob4Touched),
+            (InputElement::Knob5, InputElement::Knob5Touched),
+            (InputElement::Knob6, InputElement::Knob6Touched),
+            (InputElement::Knob7, InputElement::Knob7Touched),
+            (InputElement::Knob8, InputElement::Knob8Touched),
+            (InputElement::MainEncoder, InputElement::MainKnobTouched),
+        ];
+
+        knob_touch_pairs
+            .into_iter()
+            .filter(|(_, touch_element)| self.get_button(touch_element))
+            .map(|(knob_element, _)| (knob_element.clone(), self.get_value(&knob_element)))
+            .collect()
+    }
+
+    /// Get all non-zero audio control values with their elements
+    pub fn get_active_audio(&self) -> Vec<(InputElement, u16)> {
+        let audio_elements = [
+            InputElement::MicGain, InputElement::HeadphoneVolume, InputElement::MasterVolume,
+        ];
+
+        audio_elements
+            .into_iter()
+            .map(|element| (element.clone(), self.get_value(&element)))
+            .filter(|(_, value)| *value > 0)
+            .collect()
+    }
+
+    /// Get touch strip data if any finger is active
+    pub fn get_touch_strip_data(&self) -> Option<((u8, u8, u8, u8), (u8, u8, u8, u8))> {
+        if self.touch_strip.finger_1.data_a > 0 || self.touch_strip.finger_2.data_a > 0 {
+            Some((
+                (
+                    self.touch_strip.finger_1.data_a,
+                    self.touch_strip.finger_1.data_b,
+                    self.touch_strip.finger_1.data_c,
+                    self.touch_strip.finger_1.data_d,
+                ),
+                (
+                    self.touch_strip.finger_2.data_a,
+                    self.touch_strip.finger_2.data_b,
+                    self.touch_strip.finger_2.data_c,
+                    self.touch_strip.finger_2.data_d,
+                ),
+            ))
+        } else {
+            None
+        }
+    }
+}
+
+impl InputTracker {
+    pub fn new() -> Self {
+        Self {
+            previous_state: None,
+            held_buttons: HashMap::new(),
+            frame_count: 0,
+            is_first_update: true,
+        }
+    }
+
+    /// Update the tracker with a new input state and return all events
+    pub fn update(&mut self, current_state: InputState) -> Vec<InputEvent> {
+        let mut events = Vec::new();
+        self.frame_count += 1;
+
+        let prev_state = self.previous_state.take().unwrap_or_default();
+        
+        // Check button events
+        Self::check_button_events_static(&mut events, &prev_state, &current_state, &mut self.held_buttons, self.frame_count);
+
+        // Check knob/value events - but skip on first update to avoid spurious events from initial hardware state
+        if !self.is_first_update {
+            Self::check_value_events_static(&mut events, &prev_state, &current_state);
+        }
+
+        self.previous_state = Some(current_state);
+        self.is_first_update = false;
+        events
+    }
+
+    fn check_button_events_static(
+        events: &mut Vec<InputEvent>,
+        prev: &InputState,
+        current: &InputState,
+        held_buttons: &mut HashMap<InputElement, u32>,
+        frame_count: u32,
+    ) {
+        let button_elements = [
+            InputElement::Play,
+            InputElement::Rec,
+            InputElement::Stop,
+            InputElement::Restart,
+            InputElement::Erase,
+            InputElement::Tap,
+            InputElement::Follow,
+            InputElement::GroupA,
+            InputElement::GroupB,
+            InputElement::GroupC,
+            InputElement::GroupD,
+            InputElement::GroupE,
+            InputElement::GroupF,
+            InputElement::GroupG,
+            InputElement::GroupH,
+            InputElement::Notes,
+            InputElement::Volume,
+            InputElement::Swing,
+            InputElement::Tempo,
+            InputElement::NoteRepeat,
+            InputElement::Lock,
+            InputElement::PadMode,
+            InputElement::Keyboard,
+            InputElement::Chords,
+            InputElement::Step,
+            InputElement::FixedVel,
+            InputElement::Scene,
+            InputElement::Pattern,
+            InputElement::Events,
+            InputElement::Variation,
+            InputElement::Duplicate,
+            InputElement::Select,
+            InputElement::Solo,
+            InputElement::Mute,
+            InputElement::Pitch,
+            InputElement::Mod,
+            InputElement::Perform,
+            InputElement::Shift,
+            InputElement::EncoderPush,
+            InputElement::EncoderUp,
+            InputElement::EncoderDown,
+            InputElement::EncoderLeft,
+            InputElement::EncoderRight,
+            InputElement::DisplayButton1,
+            InputElement::DisplayButton2,
+            InputElement::DisplayButton3,
+            InputElement::DisplayButton4,
+            InputElement::DisplayButton5,
+            InputElement::DisplayButton6,
+            InputElement::DisplayButton7,
+            InputElement::DisplayButton8,
+            InputElement::ChannelMidi,
+            InputElement::Arranger,
+            InputElement::BrowserPlugin,
+            InputElement::ArrowLeft,
+            InputElement::ArrowRight,
+            InputElement::FileSave,
+            InputElement::Settings,
+            InputElement::Macro,
+            InputElement::Plugin,
+            InputElement::Mixer,
+            InputElement::Sampling,
+            InputElement::Auto,
+            InputElement::PedalConnected,
+            InputElement::MicrophoneConnected,
+            InputElement::Knob1Touched,
+            InputElement::Knob2Touched,
+            InputElement::Knob3Touched,
+            InputElement::Knob4Touched,
+            InputElement::Knob5Touched,
+            InputElement::Knob6Touched,
+            InputElement::Knob7Touched,
+            InputElement::Knob8Touched,
+            InputElement::MainKnobTouched,
+        ];
+
+        for element in &button_elements {
+            let prev_pressed = prev.get_button(element);
+            let current_pressed = current.get_button(element);
+
+            match (prev_pressed, current_pressed) {
+                (false, true) => {
+                    events.push(InputEvent::ButtonPressed(element.clone()));
+                    held_buttons.insert(element.clone(), frame_count);
+                }
+                (true, false) => {
+                    events.push(InputEvent::ButtonReleased(element.clone()));
+                    held_buttons.remove(element);
+                }
+                (true, true) => {
+                    if let Some(held_since) = held_buttons.get(element) {
+                        if frame_count - held_since > 30 {
+                            // ~0.5 seconds at 60fps
+                            events.push(InputEvent::ButtonHeld(element.clone()));
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn check_value_events_static(
+        events: &mut Vec<InputEvent>,
+        prev: &InputState,
+        current: &InputState,
+    ) {
+        let knob_elements = [
+            InputElement::Knob1,
+            InputElement::Knob2,
+            InputElement::Knob3,
+            InputElement::Knob4,
+            InputElement::Knob5,
+            InputElement::Knob6,
+            InputElement::Knob7,
+            InputElement::Knob8,
+            InputElement::MainEncoder,
+        ];
+
+        let audio_elements = [
+            InputElement::MicGain,
+            InputElement::HeadphoneVolume,
+            InputElement::MasterVolume,
+        ];
+
+        for element in &knob_elements {
+            let prev_value = prev.get_value(element);
+            let current_value = current.get_value(element);
+
+            if prev_value != current_value {
+                let delta = current_value as i32 - prev_value as i32;
+                events.push(InputEvent::KnobChanged {
+                    element: element.clone(),
+                    value: current_value,
+                    delta,
+                });
+            }
+        }
+
+        for element in &audio_elements {
+            let prev_value = prev.get_value(element);
+            let current_value = current.get_value(element);
+
+            if prev_value != current_value {
+                let delta = current_value as i32 - prev_value as i32;
+                events.push(InputEvent::AudioChanged {
+                    element: element.clone(),
+                    value: current_value,
+                    delta,
+                });
+            }
+        }
+    }
+
+    /// Check if a button was just pressed this frame
+    pub fn was_pressed(&self, element: &InputElement) -> bool {
+        if let Some(ref current) = self.previous_state {
+            current.get_button(element) && !self.held_buttons.contains_key(element)
+        } else {
+            false
+        }
+    }
+
+    /// Check if a button is currently held
+    pub fn is_held(&self, element: &InputElement) -> bool {
+        self.held_buttons.contains_key(element)
+    }
+
+    /// Check if a button was just released this frame
+    pub fn was_released(&self, element: &InputElement) -> bool {
+        if let Some(ref current) = self.previous_state {
+            !current.get_button(element) && self.held_buttons.contains_key(element)
+        } else {
+            false
+        }
+    }
+}
+
+impl Default for InputTracker {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

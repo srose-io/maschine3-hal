@@ -80,7 +80,7 @@ fn create_single_row_packet(display_num: u8, time: f32) -> Vec<u8> {
 
             // Simple 2x2 Bayer dither to reduce banding
             let dither_matrix = [[0.0, 0.5], [0.75, 0.25]];
-            let dither_value = dither_matrix[(y / 2) as usize][(x % 2) as usize];
+            let dither_value = dither_matrix[(y % 2) as usize][(x % 2) as usize];
             let dither_amount = 8.0; // Adjust strength (0-8 works well)
 
             let red_float = x_progress * 255.0 + (dither_value - 0.375) * dither_amount;

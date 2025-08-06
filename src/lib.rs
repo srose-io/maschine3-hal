@@ -9,7 +9,7 @@ pub mod ni_ipc;
 pub use device::MaschineMK3;
 pub use error::MK3Error;
 pub use input::{
-    AudioState, ButtonState, InputState, KnobState, PadHit, PadState, TouchStripState,
+    AudioState, ButtonState, InputElement, InputEvent, InputState, InputTracker, KnobState, PadHit, PadState, TouchStripState,
 };
 pub use output::{
     ButtonLedState, DisplayGraphics, DisplayPacket, LedBrightness, MaschineLEDColor, PadLedState,
