@@ -3,8 +3,6 @@ pub mod error;
 pub mod input;
 pub mod output;
 
-pub mod ni_ipc;
-
 pub use device::MaschineMK3;
 pub use error::MK3Error;
 pub use input::{
