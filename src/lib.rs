@@ -3,7 +3,6 @@ pub mod error;
 pub mod input;
 pub mod output;
 
-#[cfg(windows)]
 pub mod ni_ipc;
 
 pub use device::MaschineMK3;

@@ -4,7 +4,7 @@ A Rust hardware abstraction layer (HAL) for the Native Instruments Maschine MK3 
 
 [![Crate](https://img.shields.io/badge/crates.io-not%20yet%20published-red)](https://crates.io/crates/mk3-hal)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Build Status](https://img.shields.io/badge/build-alpha-orange)](https://github.com/yourusername/mk3-hal)
+[![Build Status](https://img.shields.io/badge/build-alpha-orange)](https://github.com/srose-dev/mk3-hal)
 
 ## Overview
 
