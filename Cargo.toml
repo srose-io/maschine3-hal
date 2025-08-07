@@ -1,7 +1,21 @@
 [package]
-name = "mk3-hal"
+name = "maschine-mk3"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
+authors = ["Your Name <your.email@example.com>"]
+description = "Hardware abstraction layer for Native Instruments Maschine MK3 controller (Windows only)"
+documentation = "https://docs.rs/maschine-mk3"
+repository = "https://github.com/yourusername/maschine-mk3"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+keywords = ["maschine", "midi", "controller", "native-instruments", "usb-hid"]
+categories = ["hardware-support", "multimedia::audio", "api-bindings"]
+exclude = [
+    "wireshark_dumps/*",
+    "shell_scripts/*",
+    "*.pcapng",
+    "*.raw"
+]
 
 [dependencies]
 rusb = "0.9"

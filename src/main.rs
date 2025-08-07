@@ -1,4 +1,4 @@
-use mk3_hal::{MK3Error, MaschineMK3};
+use maschine_mk3::{MK3Error, MaschineMK3};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Maschine MK3 HAL - Phase 1 Test");

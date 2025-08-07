@@ -49,7 +49,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "mk3-hal"
+name = "maschine-mk3"
 version = "0.1.0"
 dependencies = [
  "hidapi",

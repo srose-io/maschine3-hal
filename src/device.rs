@@ -21,6 +21,21 @@ const INPUT_ENDPOINT: u8 = 0x83;
 const OUTPUT_ENDPOINT: u8 = 0x03;
 const DISPLAY_ENDPOINT: u8 = 0x04; // Original endpoint 0x04 from interface 5
 
+/// Main interface for communicating with a Maschine MK3 controller.
+/// 
+/// Provides methods for reading input events and controlling LEDs/display.
+/// 
+/// # Example
+/// 
+/// ```no_run
+/// use maschine_mk3::MaschineMK3;
+/// 
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let mut device = MaschineMK3::new()?;
+/// let events = device.poll_input_events()?;
+/// # Ok(())
+/// # }
+/// ```
 pub struct MaschineMK3 {
     device_handle: DeviceHandle<Context>,
     pub context: Context,
@@ -40,7 +55,26 @@ pub struct MaschineMK3 {
 }
 
 impl MaschineMK3 {
-    /// Find and connect to the first available Maschine MK3 device
+    /// Connect to the first available Maschine MK3 device.
+    /// 
+    /// # Errors
+    /// 
+    /// Returns an error if:
+    /// - No Maschine MK3 device is found
+    /// - USB interfaces cannot be claimed
+    /// - Device communication fails
+    /// 
+    /// # Example
+    /// 
+    /// ```no_run
+    /// use maschine_mk3::MaschineMK3;
+    /// 
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let mut device = MaschineMK3::new()?;
+    /// println!("Connected to Maschine MK3");
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn new() -> Result<Self> {
         let context = Context::new()?;
         let device = Self::find_device(&context)?;
