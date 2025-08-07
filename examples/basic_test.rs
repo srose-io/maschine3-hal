@@ -1,4 +1,4 @@
-use mk3_hal::{
+use maschine3_hal::{
     InputEvent, InputElement, MK3Error, MaschineLEDColor, MaschineMK3,
     RgbColor,
 };

@@ -1,11 +1,11 @@
 [package]
-name = "maschine-mk3"
+name = "maschine3-hal"
 version = "0.1.0"
 edition = "2021"
-authors = ["Your Name <your.email@example.com>"]
+authors = ["Spencer Rose <spencer@srose.io>"]
 description = "Hardware abstraction layer for Native Instruments Maschine MK3 controller (Windows only)"
-documentation = "https://docs.rs/maschine-mk3"
-repository = "https://github.com/yourusername/maschine-mk3"
+documentation = "https://docs.rs/maschine3-hal"
+repository = "https://github.com/srose-io/maschine3-hal"
 license = "MIT OR Apache-2.0"
 readme = "README.md"
 keywords = ["maschine", "midi", "controller", "native-instruments", "usb-hid"]
@@ -29,4 +29,3 @@ windows = { version = "0.58", features = [
     "Win32_Security",
     "Win32_System_SystemServices"
 ] }
-socket2 = "0.5"

@@ -10,6 +10,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 # Don't use cutesey descriptions for while you are working like "divining" or "moseying", just be professional use "thinking"
 
+# You are on a windows machine, commands like rm and ls don't work, neither do forward slashes between paths
+
 ## Project Overview
 
 This is a Rust hardware abstraction layer (HAL) for the Native Instruments Maschine MK3 controller. It provides low-level USB HID communication with the device, handling button/pad inputs, LED outputs, and display graphics.

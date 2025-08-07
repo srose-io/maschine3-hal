@@ -1,4 +1,4 @@
-use mk3_hal::MaschineMK3;
+use maschine3_hal::MaschineMK3;
 use std::io::Result;
 use std::time::Instant;
 

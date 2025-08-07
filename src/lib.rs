@@ -1,4 +1,4 @@
-//! # maschine-mk3
+//! # maschine3-hal
 //! 
 //! Hardware abstraction layer for Native Instruments Maschine MK3 controller (Windows only).
 //! 

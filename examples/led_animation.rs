@@ -1,4 +1,4 @@
-use mk3_hal::{ButtonLedState, MK3Error, MaschineLEDColor, MaschineMK3, PadLedState, RgbColor};
+use maschine3_hal::{ButtonLedState, MK3Error, MaschineLEDColor, MaschineMK3, PadLedState, RgbColor};
 use std::time::Duration;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
