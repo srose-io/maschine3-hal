@@ -63,11 +63,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         _ => {},
                     }
                 }
-                InputEvent::PadHit { pad_number, velocity, .. } => {
-                    println!("🥁 Pad {} hit (velocity: {})", pad_number + 1, velocity);
+                InputEvent::PadEvent { pad_number, event_type: mk3_hal::PadEventType::Hit, value } => {
+                    println!("🥁 Pad {} hit (velocity: {})", pad_number + 1, value);
                     
-                    // Flash pad with brightness based on velocity
-                    let brightness = velocity > 100;
+                    // Flash pad with brightness based on velocity (12-bit scale)
+                    let brightness = value > 2048;
                     let color = match pad_number % 4 {
                         0 => MaschineLEDColor::red(brightness),
                         1 => MaschineLEDColor::green(brightness),

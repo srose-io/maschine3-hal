@@ -56,31 +56,47 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
 
-                InputEvent::PadHit {
+                InputEvent::PadEvent {
                     pad_number,
-                    velocity,
-                    ..
+                    event_type: mk3_hal::PadEventType::Hit,
+                    value,
                 } => {
-                    //println!("🥁 Pad {} hit (velocity: {})", pad_number + 1, velocity);
+                    println!("🥁 Pad {} hit (velocity: {})", pad_number + 1, value);
 
-                    // Light up pad with color and brightness based on velocity
-                    let _high_velocity = velocity > 100;
-                    // let color = match pad_number % 8 {
-                    //     0 => MaschineLEDColor::red(high_velocity),
-                    //     1 => MaschineLEDColor::green(high_velocity),
-                    //     2 => MaschineLEDColor::blue(high_velocity),
-                    //     3 => MaschineLEDColor::white(high_velocity),
-                    //     4 => MaschineLEDColor::red(!high_velocity),
-                    //     5 => MaschineLEDColor::green(!high_velocity),
-                    //     6 => MaschineLEDColor::blue(!high_velocity),
-                    //     _ => MaschineLEDColor::white(!high_velocity),
-                    // };
-                    let color = MaschineLEDColor::white(true);
+                    // Light up pad with color based on velocity (12-bit value scaled)
+                    let high_velocity = value > 2048; // Half of 4095 max
+                    let color = match pad_number % 8 {
+                        0 => MaschineLEDColor::red(high_velocity),
+                        1 => MaschineLEDColor::green(high_velocity),
+                        2 => MaschineLEDColor::blue(high_velocity),
+                        3 => MaschineLEDColor::white(high_velocity),
+                        4 => MaschineLEDColor::red(!high_velocity),
+                        5 => MaschineLEDColor::green(!high_velocity),
+                        6 => MaschineLEDColor::blue(!high_velocity),
+                        _ => MaschineLEDColor::white(!high_velocity),
+                    };
 
                     device.set_pad_led(pad_number, color)?;
-
-                    // Schedule pad to fade after a moment (in a real app you'd use a proper timer)
-                    // For now, just keep the pad lit
+                }
+                
+                InputEvent::PadEvent {
+                    pad_number,
+                    event_type: mk3_hal::PadEventType::HitRelease | mk3_hal::PadEventType::TouchRelease,
+                    ..
+                } => {
+                    println!("🔼 Pad {} released", pad_number + 1);
+                    device.set_pad_led(pad_number, MaschineLEDColor::black())?;
+                }
+                
+                InputEvent::PadEvent {
+                    pad_number,
+                    event_type: mk3_hal::PadEventType::Aftertouch,
+                    value,
+                } => {
+                    // Update brightness based on aftertouch pressure
+                    let high_pressure = value > 2048;
+                    let color = MaschineLEDColor::white(high_pressure);
+                    device.set_pad_led(pad_number, color)?;
                 }
 
                 _ => {

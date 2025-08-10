@@ -1,7 +1,4 @@
-use mk3_hal::{
-    InputEvent, InputElement, MK3Error, MaschineLEDColor, MaschineMK3,
-    RgbColor,
-};
+use mk3_hal::{InputElement, InputEvent, MK3Error, MaschineLEDColor, MaschineMK3, RgbColor};
 use std::time::Duration;
 
 /// Basic test application demonstrating all MK3 functionality
@@ -36,7 +33,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     while start_time.elapsed() < Duration::from_secs(10) {
         let events = device.poll_input_events()?;
-        
+
         for event in events {
             event_count += 1;
             match &event {
@@ -46,8 +43,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 InputEvent::ButtonReleased(element) => {
                     println!("   🔼 {} released", element.name());
                 }
-                InputEvent::PadHit { pad_number, velocity, .. } => {
-                    println!("   🥁 Pad {} hit (velocity: {})", pad_number + 1, velocity);
+                InputEvent::PadEvent {
+                    pad_number,
+                    event_type: mk3_hal::PadEventType::Hit,
+                    value,
+                } => {
+                    println!("   🥁 Pad {} hit (velocity: {})", pad_number + 1, value);
                 }
                 InputEvent::KnobChanged { element, value, .. } => {
                     println!("   🎛️  {} → {}", element.name(), value);
@@ -107,16 +108,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     while start_time.elapsed() < Duration::from_secs(30) {
         let events = device.poll_input_events()?;
-        
+
         for event in events {
             match event {
                 InputEvent::ButtonPressed(element) => {
                     // Light up button when pressed
                     match element {
-                        InputElement::GroupA => device.set_button_led_color(element, MaschineLEDColor::red(true))?,
-                        InputElement::GroupB => device.set_button_led_color(element, MaschineLEDColor::green(true))?,
-                        InputElement::GroupC => device.set_button_led_color(element, MaschineLEDColor::blue(true))?,
-                        InputElement::GroupD => device.set_button_led_color(element, MaschineLEDColor::white(true))?,
+                        InputElement::GroupA => {
+                            device.set_button_led_color(element, MaschineLEDColor::red(true))?
+                        }
+                        InputElement::GroupB => {
+                            device.set_button_led_color(element, MaschineLEDColor::green(true))?
+                        }
+                        InputElement::GroupC => {
+                            device.set_button_led_color(element, MaschineLEDColor::blue(true))?
+                        }
+                        InputElement::GroupD => {
+                            device.set_button_led_color(element, MaschineLEDColor::white(true))?
+                        }
                         InputElement::Play => device.set_button_led(element, 127)?,
                         _ => {}
                     }
@@ -124,17 +133,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 InputEvent::ButtonReleased(element) => {
                     // Turn off button when released
                     match element {
-                        InputElement::GroupA | InputElement::GroupB | 
-                        InputElement::GroupC | InputElement::GroupD => {
+                        InputElement::GroupA
+                        | InputElement::GroupB
+                        | InputElement::GroupC
+                        | InputElement::GroupD => {
                             device.set_button_led_color(element, MaschineLEDColor::black())?;
                         }
                         InputElement::Play => device.set_button_led(element, 0)?,
                         _ => {}
                     }
                 }
-                InputEvent::PadHit { pad_number, velocity, .. } => {
-                    // Flash pad based on velocity
-                    let brightness = velocity > 100;
+                InputEvent::PadEvent {
+                    pad_number,
+                    event_type: mk3_hal::PadEventType::Hit,
+                    value,
+                } => {
+                    // Flash pad based on velocity (12-bit scale)
+                    let brightness = value > 2048;
                     let color = match pad_number % 4 {
                         0 => MaschineLEDColor::red(brightness),
                         1 => MaschineLEDColor::green(brightness),
@@ -157,12 +172,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test 4: Display (if available)
     println!("📺 Test 4: Display Test");
     println!("   Clearing display with solid color...");
-    
+
     match device.clear_display(0, 255, 0, 0) {
         Ok(()) => {
             println!("   ✅ Display cleared to red");
             std::thread::sleep(Duration::from_secs(2));
-            
+
             device.clear_display(0, 0, 0, 0)?;
             println!("   ✅ Display turned off");
         }

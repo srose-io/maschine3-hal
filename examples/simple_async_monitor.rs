@@ -34,8 +34,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // We'll show a better example in simple_test.rs
                 println!("  💡 {} button pressed!", btn.name());
             }
-            InputEvent::PadHit { pad_number, velocity, .. } => {
-                println!("  🥁 Pad {} hit with velocity {}!", pad_number + 1, velocity);
+            InputEvent::PadEvent { pad_number, event_type: mk3_hal::PadEventType::Hit, value } => {
+                println!("  🥁 Pad {} hit with velocity {}!", pad_number + 1, value);
             }
             _ => {}
         }

@@ -342,6 +342,15 @@ impl InputElement {
     }
 }
 
+/// Pad event types
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PadEventType {
+    Hit,           // 0x1 - Initial pad hit with velocity
+    TouchRelease,  // 0x2 - Release from touch-only (no initial hit)
+    HitRelease,    // 0x3 - Release from normal hit
+    Aftertouch,    // 0x4 - Pressure/aftertouch data
+}
+
 /// Input event types
 #[derive(Debug, Clone, PartialEq)]
 pub enum InputEvent {
@@ -358,10 +367,10 @@ pub enum InputEvent {
         value: u16,
         delta: i32,
     },
-    PadHit {
+    PadEvent {
         pad_number: u8,
-        velocity: u8,
-        pressure: u8,
+        event_type: PadEventType,
+        value: u16,  // 12-bit velocity/pressure (0-4095)
     },
 }
 
@@ -383,18 +392,61 @@ pub struct InputState {
     pub audio: AudioState,
 }
 
-/// Individual pad hit data
+/// Individual pad event
 #[derive(Debug, Clone)]
-pub struct PadHit {
-    pub pad_number: u8, // 0-15, numbered from top-right to bottom-left
-    pub data_a: u8,     // Not yet reverse engineered
-    pub data_b: u8,     // Not yet reverse engineered
+pub struct PadEvent {
+    pub pad_number: u8,      // 0-15
+    pub event_type: PadEventType,
+    pub value: u16,          // 12-bit velocity/pressure (0-4095)
+}
+
+impl PadEvent {
+    /// Parse from raw 3-byte data
+    pub fn from_raw(pad_number: u8, type_and_high: u8, low_byte: u8) -> Self {
+        let event_type = match type_and_high >> 4 {
+            0x1 => PadEventType::Hit,
+            0x2 => PadEventType::TouchRelease,
+            0x3 => PadEventType::HitRelease,
+            0x4 => PadEventType::Aftertouch,
+            _ => PadEventType::Aftertouch, // Default/unknown
+        };
+        
+        // Combine 12-bit value: 4 high bits from type_and_high + 8 bits from low_byte
+        let value = ((type_and_high as u16 & 0x0F) << 8) | (low_byte as u16);
+        
+        Self {
+            pad_number,
+            event_type,
+            value,
+        }
+    }
+    
+    /// Get velocity for hit events (returns None for non-hit events)
+    pub fn velocity(&self) -> Option<u16> {
+        match self.event_type {
+            PadEventType::Hit => Some(self.value),
+            _ => None,
+        }
+    }
+    
+    /// Get pressure for aftertouch events (returns None for non-aftertouch events)
+    pub fn pressure(&self) -> Option<u16> {
+        match self.event_type {
+            PadEventType::Aftertouch => Some(self.value),
+            _ => None,
+        }
+    }
+    
+    /// Check if this is a release event
+    pub fn is_release(&self) -> bool {
+        matches!(self.event_type, PadEventType::TouchRelease | PadEventType::HitRelease)
+    }
 }
 
 /// Represents pad input from Type 0x02 packets
 #[derive(Debug, Clone, Default)]
 pub struct PadState {
-    pub hits: Vec<PadHit>,
+    pub events: Vec<PadEvent>,
 }
 
 impl InputState {
@@ -818,12 +870,12 @@ impl InputTracker {
     /// Update the tracker with pad events and return them as InputEvents
     pub fn update_pads(&mut self, pad_state: PadState) -> Vec<InputEvent> {
         pad_state
-            .hits
+            .events
             .into_iter()
-            .map(|hit| InputEvent::PadHit {
-                pad_number: hit.pad_number,
-                velocity: hit.data_a,
-                pressure: hit.data_b,
+            .map(|event| InputEvent::PadEvent {
+                pad_number: event.pad_number,
+                event_type: event.event_type,
+                value: event.value,
             })
             .collect()
     }
@@ -850,17 +902,22 @@ impl InputEvent {
             } => {
                 format!("{} → {} (Δ{})", element.name(), value, delta)
             }
-            InputEvent::PadHit {
+            InputEvent::PadEvent {
                 pad_number,
-                velocity,
-                pressure,
+                event_type,
+                value,
             } => {
+                let event_str = match event_type {
+                    PadEventType::Hit => format!("hit (velocity: {})", value),
+                    PadEventType::Aftertouch => format!("aftertouch (pressure: {})", value),
+                    PadEventType::TouchRelease => "release (touch)".to_string(),
+                    PadEventType::HitRelease => "release".to_string(),
+                };
                 format!(
-                    "Pad {} ({}) - velocity:{} pressure:{}",
+                    "Pad {} ({}) - {}",
                     pad_number + 1,
                     Self::get_pad_position(*pad_number),
-                    velocity,
-                    pressure
+                    event_str
                 )
             }
         }
@@ -868,24 +925,24 @@ impl InputEvent {
 
     /// Get the grid position name for a pad number (0-15)
     fn get_pad_position(pad_num: u8) -> &'static str {
-        // Pads are numbered 0-15, from top-right to bottom-left
+        // Pads are numbered 0-15, from top-left to bottom-right
         match pad_num {
-            0 => "TR", // Top Right
+            0 => "TL", // Top Left
             1 => "T2",
             2 => "T3",
-            3 => "TL", // Top Left
-            4 => "2R",
+            3 => "TR", // Top Right
+            4 => "2L",
             5 => "22",
             6 => "23",
-            7 => "2L",
-            8 => "3R",
+            7 => "2R",
+            8 => "3L",
             9 => "32",
             10 => "33",
-            11 => "3L",
-            12 => "BR", // Bottom Right
+            11 => "3R",
+            12 => "BL", // Bottom Left
             13 => "B2",
             14 => "B3",
-            15 => "BL", // Bottom Left
+            15 => "BR", // Bottom Right
             _ => "??",
         }
     }
@@ -1091,41 +1148,30 @@ impl PadState {
             return Err(MK3Error::InvalidPacket);
         }
 
-        let mut hits = Vec::new();
+        let mut events = Vec::new();
         let mut offset = 1;
 
-        // Parse pad hits in groups of 3 bytes (pad_number, data_a, data_b)
+        // Parse pad events in groups of 3 bytes
         while offset + 2 < data.len() {
             let pad_number = data[offset];
-            let data_a = data[offset + 1];
-            let data_b = data[offset + 2];
+            let type_and_high = data[offset + 1];
+            let low_byte = data[offset + 2];
 
             // Skip empty/padding entries (all zeros)
-            if pad_number == 0 && data_a == 0 && data_b == 0 {
+            if pad_number == 0 && type_and_high == 0 && low_byte == 0 {
                 offset += 3;
                 continue;
             }
 
-            if pad_number == 0 && data_a == 0 && data_b == 0 {
-                offset += 3;
-                continue;
-            }
+            // Debug output (commented out for production)
+            // println!(
+            //     "Pad Event: {:08b}, {:08b}, {:08b}",
+            //     pad_number, type_and_high, low_byte
+            // );
 
-            //Debug the data thats coming in for pad hits, show everything coming in
-            //Show in binary, pad the bits out to 8 bits
-            println!(
-                "Pad Hit: {:08b}, {:08b}, {:08b}",
-                pad_number, data_a, data_b
-            );
-
-            //pad_number = pad_number.saturating_sub(1);
-            // Check if this is a valid pad hit (pad numbers 0-15)
+            // Check if this is a valid pad event (pad numbers 0-15)
             if pad_number <= 15 {
-                hits.push(PadHit {
-                    pad_number,
-                    data_a,
-                    data_b,
-                });
+                events.push(PadEvent::from_raw(pad_number, type_and_high, low_byte));
             } else {
                 // End of pad data
                 break;
@@ -1134,6 +1180,6 @@ impl PadState {
             offset += 3;
         }
 
-        Ok(PadState { hits })
+        Ok(PadState { events })
     }
 }
