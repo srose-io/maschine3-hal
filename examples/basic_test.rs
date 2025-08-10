@@ -1,4 +1,4 @@
-use mk3_hal::{InputElement, InputEvent, MK3Error, MaschineLEDColor, MaschineMK3, RgbColor};
+use maschine3_hal::{InputElement, InputEvent, MK3Error, MaschineLEDColor, MaschineMK3, RgbColor};
 use std::time::Duration;
 
 /// Basic test application demonstrating all MK3 functionality

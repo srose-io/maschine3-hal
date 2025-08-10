@@ -1,4 +1,4 @@
-use mk3_hal::{InputEvent, MK3Error, MaschineLEDColor, MaschineMK3};
+use maschine3_hal::{InputEvent, MK3Error, MaschineLEDColor, MaschineMK3};
 use std::time::Duration;
 
 /// Interactive pad lighting demo

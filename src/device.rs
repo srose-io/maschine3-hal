@@ -8,7 +8,6 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-#[cfg(target_os = "windows")]
 use hidapi::{HidApi, HidDevice};
 
 /// Native Instruments Maschine MK3 USB constants
@@ -22,12 +21,25 @@ const INPUT_ENDPOINT: u8 = 0x83;
 const OUTPUT_ENDPOINT: u8 = 0x03;
 const DISPLAY_ENDPOINT: u8 = 0x04; // Original endpoint 0x04 from interface 5
 
+/// Main interface for communicating with a Maschine MK3 controller.
+/// 
+/// Provides methods for reading input events and controlling LEDs/display.
+/// 
+/// # Example
+/// 
+/// ```no_run
+/// use maschine_mk3::MaschineMK3;
+/// 
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let mut device = MaschineMK3::new()?;
+/// let events = device.poll_input_events()?;
+/// # Ok(())
+/// # }
+/// ```
 pub struct MaschineMK3 {
     device_handle: DeviceHandle<Context>,
     pub context: Context,
-    #[cfg(target_os = "windows")]
     hid_device: Option<HidDevice>,
-    #[cfg(target_os = "windows")]
     _hid_api: Option<HidApi>,
 
     // LED state management
@@ -43,7 +55,26 @@ pub struct MaschineMK3 {
 }
 
 impl MaschineMK3 {
-    /// Find and connect to the first available Maschine MK3 device
+    /// Connect to the first available Maschine MK3 device.
+    /// 
+    /// # Errors
+    /// 
+    /// Returns an error if:
+    /// - No Maschine MK3 device is found
+    /// - USB interfaces cannot be claimed
+    /// - Device communication fails
+    /// 
+    /// # Example
+    /// 
+    /// ```no_run
+    /// use maschine_mk3::MaschineMK3;
+    /// 
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let mut device = MaschineMK3::new()?;
+    /// println!("Connected to Maschine MK3");
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn new() -> Result<Self> {
         let context = Context::new()?;
         let device = Self::find_device(&context)?;
@@ -52,9 +83,7 @@ impl MaschineMK3 {
         // Debug: print device configuration info
         Self::debug_device_info(&device)?;
 
-        // Enable automatic kernel driver detachment (skip on Windows where it's not supported)
-        #[cfg(not(target_os = "windows"))]
-        device_handle.set_auto_detach_kernel_driver(true)?;
+        // Windows doesn't support automatic kernel driver detachment
 
         // Try to detach kernel drivers and claim interfaces
         Self::claim_interface_with_detach(&mut device_handle, HID_INTERFACE)?;
@@ -88,8 +117,7 @@ impl MaschineMK3 {
             }
         }
 
-        // Try to open HID device for LED communication on Windows
-        #[cfg(target_os = "windows")]
+        // Try to open HID device for LED communication
         let (hid_device, hid_api) = {
             match HidApi::new() {
                 Ok(api) => {
@@ -126,9 +154,7 @@ impl MaschineMK3 {
         Ok(Self {
             device_handle,
             context,
-            #[cfg(target_os = "windows")]
             hid_device,
-            #[cfg(target_os = "windows")]
             _hid_api: hid_api,
 
             // Initialize LED state management
@@ -151,36 +177,15 @@ impl MaschineMK3 {
     ) -> Result<()> {
         println!("🔧 Attempting to claim interface {}", interface);
 
-        // On Windows, try direct claim first (kernel driver detachment not supported)
-        #[cfg(target_os = "windows")]
-        {
-            match handle.claim_interface(interface) {
-                Ok(()) => {
-                    println!("✅ Successfully claimed interface {}", interface);
-                    return Ok(());
-                }
-                Err(e) => {
-                    println!("❌ Failed to claim interface {}: {:?}", interface, e);
-                    return Err(MK3Error::Usb(e));
-                }
+        // Windows doesn't support kernel driver detachment
+        match handle.claim_interface(interface) {
+            Ok(()) => {
+                println!("✅ Successfully claimed interface {}", interface);
+                Ok(())
             }
-        }
-
-        // On non-Windows systems, try to detach kernel driver first
-        #[cfg(not(target_os = "windows"))]
-        {
-            // Try to detach kernel driver (ignore errors)
-            let _ = handle.detach_kernel_driver(interface);
-
-            match handle.claim_interface(interface) {
-                Ok(()) => {
-                    println!("✅ Successfully claimed interface {}", interface);
-                    Ok(())
-                }
-                Err(e) => {
-                    println!("❌ Failed to claim interface {}: {:?}", interface, e);
-                    Err(MK3Error::Usb(e))
-                }
+            Err(e) => {
+                println!("❌ Failed to claim interface {}: {:?}", interface, e);
+                Err(MK3Error::Usb(e))
             }
         }
     }
@@ -258,24 +263,21 @@ impl MaschineMK3 {
 
     /// Write LED data to the device
     fn write_leds(&self, data: &[u8]) -> Result<()> {
-        #[cfg(target_os = "windows")]
-        {
-            // On Windows, use HID API for LED communication (interface 4 requires HID driver)
-            if let Some(ref hid_dev) = self.hid_device {
-                match hid_dev.write(data) {
-                    Ok(_) => return Ok(()),
-                    Err(e) => {
-                        eprintln!("HID LED write failed: {}", e);
-                        return Err(MK3Error::Io(std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            e,
-                        )));
-                    }
+        // Use HID API for LED communication (interface 4 requires HID driver)
+        if let Some(ref hid_dev) = self.hid_device {
+            match hid_dev.write(data) {
+                Ok(_) => return Ok(()),
+                Err(e) => {
+                    eprintln!("HID LED write failed: {}", e);
+                    return Err(MK3Error::Io(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        e,
+                    )));
                 }
             }
         }
 
-        // Fallback to USB interrupt transfer (for non-Windows or if HID failed)
+        // Fallback to USB interrupt transfer if HID failed
         let timeout = Duration::from_millis(100);
         match self
             .device_handle
@@ -774,18 +776,15 @@ impl MaschineMK3 {
     }
 
     fn write_led_data(&self, data: &[u8]) -> Result<()> {
-        #[cfg(target_os = "windows")]
-        {
-            if let Some(ref hid_dev) = self.hid_device {
-                match hid_dev.write(data) {
-                    Ok(_) => return Ok(()),
-                    Err(e) => {
-                        eprintln!("HID LED write failed: {}", e);
-                        return Err(MK3Error::Io(std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            e,
-                        )));
-                    }
+        if let Some(ref hid_dev) = self.hid_device {
+            match hid_dev.write(data) {
+                Ok(_) => return Ok(()),
+                Err(e) => {
+                    eprintln!("HID LED write failed: {}", e);
+                    return Err(MK3Error::Io(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        e,
+                    )));
                 }
             }
         }

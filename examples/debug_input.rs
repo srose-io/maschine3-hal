@@ -1,4 +1,4 @@
-use mk3_hal::{MK3Error, MaschineMK3};
+use maschine3_hal::{MK3Error, MaschineMK3};
 use std::time::Duration;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

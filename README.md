@@ -1,10 +1,10 @@
-# mk3-hal
+# maschine-mk3
 
-A Rust hardware abstraction layer (HAL) for the Native Instruments Maschine MK3 controller.
+A Rust hardware abstraction layer (HAL) for the Native Instruments Maschine MK3 controller (Windows only).
 
-[![Crate](https://img.shields.io/badge/crates.io-not%20yet%20published-red)](https://crates.io/crates/mk3-hal)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Build Status](https://img.shields.io/badge/build-alpha-orange)](https://github.com/yourusername/mk3-hal)
+[![Crates.io](https://img.shields.io/crates/v/maschine-mk3.svg)](https://crates.io/crates/maschine-mk3)
+[![Documentation](https://docs.rs/maschine-mk3/badge.svg)](https://docs.rs/maschine-mk3)
+[![License](https://img.shields.io/crates/l/maschine-mk3.svg)](LICENSE-MIT)
 
 ## Overview
 
@@ -27,8 +27,7 @@ This library provides direct, low-level USB communication with the Native Instru
 
 ### Platform Support
 
-- **Windows**: Primary supported platform
-- **Linux/macOS**: Not currently supported (contributions welcome)
+- **Windows**: Only supported platform (requires Windows 10 or later)
 
 ### Driver Setup (Windows)
 
@@ -56,13 +55,13 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-mk3-hal = { git = "https://github.com/srose-dev/mk3-hal" }
+maschine-mk3 = "0.1"
 ```
 
 ## Quick Start
 
 ```rust
-use mk3_hal::{MaschineMK3, MaschineLEDColor, InputElement};
+use maschine_mk3::{MaschineMK3, MaschineLEDColor, InputEvent};
 use std::time::Duration;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -77,7 +76,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("{}", event.description());
 
             // Light up pads when hit
-            if let mk3_hal::InputEvent::PadHit { pad_number, .. } = event {
+            if let InputEvent::PadHit { pad_number, .. } = event {
                 device.set_pad_led(pad_number, MaschineLEDColor::red(true))?;
             }
         }

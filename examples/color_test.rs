@@ -1,4 +1,4 @@
-use mk3_hal::{MaschineLEDColor, RgbColor};
+use maschine3_hal::{MaschineLEDColor, RgbColor};
 
 fn main() {
     println!("🎨 Maschine MK3 Color Mapping Test");
