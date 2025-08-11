@@ -1,0 +1,13 @@
+# udev rules for Native Instruments Maschine MK3
+# This file should be placed in /etc/udev/rules.d/
+# After copying, run: sudo udevadm control --reload-rules && sudo udevadm trigger
+
+# Native Instruments Maschine MK3 (VID: 0x17cc, PID: 0x1600)
+# Allow members of the 'audio' group to access the device
+SUBSYSTEM=="usb", ATTRS{idVendor}=="17cc", ATTRS{idProduct}=="1600", GROUP="audio", MODE="0664"
+
+# Alternative: Allow all users to access (less secure)
+# SUBSYSTEM=="usb", ATTRS{idVendor}=="17cc", ATTRS{idProduct}=="1600", MODE="0666"
+
+# HID interface specifically
+KERNEL=="hidraw*", ATTRS{idVendor}=="17cc", ATTRS{idProduct}=="1600", GROUP="audio", MODE="0664"

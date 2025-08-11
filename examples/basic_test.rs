@@ -45,7 +45,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 InputEvent::PadEvent {
                     pad_number,
-                    event_type: mk3_hal::PadEventType::Hit,
+                    event_type: maschine3_hal::PadEventType::Hit,
                     value,
                 } => {
                     println!("   🥁 Pad {} hit (velocity: {})", pad_number + 1, value);
@@ -145,7 +145,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 InputEvent::PadEvent {
                     pad_number,
-                    event_type: mk3_hal::PadEventType::Hit,
+                    event_type: maschine3_hal::PadEventType::Hit,
                     value,
                 } => {
                     // Flash pad based on velocity (12-bit scale)

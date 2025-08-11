@@ -14,7 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Rust hardware abstraction layer (HAL) for the Native Instruments Maschine MK3 controller. It provides low-level USB HID communication with the device, handling button/pad inputs, LED outputs, and display graphics.
+This is a cross-platform Rust hardware abstraction layer (HAL) for the Native Instruments Maschine MK3 controller. It provides low-level USB communication with the device, handling button/pad inputs, LED outputs, and display graphics on both Windows and Linux.
 
 ## Key Architecture
 
@@ -26,7 +26,7 @@ This is a Rust hardware abstraction layer (HAL) for the Native Instruments Masch
 
 - **Output System** (`src/output.rs`): Manages LED states for buttons/pads and display graphics (480x272 RGB565 format).
 
-- **Platform-Specific** (`src/ni_ipc.rs`): Windows-only IPC communication with Native Instruments services.
+- **Platform-Specific**: Cross-platform USB communication with Windows using HID API and Linux using direct USB access.
 
 ### USB Communication
 
@@ -83,13 +83,17 @@ Detailed USB protocol documentation is in `docs/`:
 - `MaschineMK3-HIDOutput.md` - LED output protocol
 - `MaschineMK3-Display.md` - Display graphics protocol
 
-## Windows Development Notes
+## Platform-Specific Notes
 
+### Windows
 On Windows, the library uses `hidapi` for HID communication since direct USB access requires driver installation. The display interface may require WinUSB driver installation via Zadig for full functionality.
+
+### Linux  
+On Linux, the library uses direct USB communication through `rusb`. Requires proper udev rules for device access (see `LINUX_SETUP.md`). Automatically handles kernel driver detachment for seamless operation.
 
 ## Dependencies
 
 - `rusb` - Cross-platform USB library
-- `hidapi` - HID API for Windows compatibility
+- `hidapi` - HID API for Windows compatibility (Windows only)
 - `thiserror` - Error handling
-- `windows` (Windows only) - For IPC communication with NI services
+- `windows` - Windows-specific APIs (Windows only)

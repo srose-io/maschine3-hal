@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
+#[cfg(windows)]
 use hidapi::{HidApi, HidDevice};
 
 /// Native Instruments Maschine MK3 USB constants
@@ -28,7 +29,7 @@ const DISPLAY_ENDPOINT: u8 = 0x04; // Original endpoint 0x04 from interface 5
 /// # Example
 /// 
 /// ```no_run
-/// use maschine_mk3::MaschineMK3;
+/// use maschine3_hal::MaschineMK3;
 /// 
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let mut device = MaschineMK3::new()?;
@@ -39,7 +40,9 @@ const DISPLAY_ENDPOINT: u8 = 0x04; // Original endpoint 0x04 from interface 5
 pub struct MaschineMK3 {
     device_handle: DeviceHandle<Context>,
     pub context: Context,
+    #[cfg(windows)]
     hid_device: Option<HidDevice>,
+    #[cfg(windows)]
     _hid_api: Option<HidApi>,
 
     // LED state management
@@ -67,7 +70,7 @@ impl MaschineMK3 {
     /// # Example
     /// 
     /// ```no_run
-    /// use maschine_mk3::MaschineMK3;
+    /// use maschine3_hal::MaschineMK3;
     /// 
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// let mut device = MaschineMK3::new()?;
@@ -83,41 +86,72 @@ impl MaschineMK3 {
         // Debug: print device configuration info
         Self::debug_device_info(&device)?;
 
-        // Windows doesn't support automatic kernel driver detachment
+        // Platform-specific interface claiming
+        #[cfg(windows)]
+        {
+            // Windows doesn't support automatic kernel driver detachment
+            Self::claim_interface_with_detach(&mut device_handle, HID_INTERFACE)?;
+        }
 
-        // Try to detach kernel drivers and claim interfaces
-        Self::claim_interface_with_detach(&mut device_handle, HID_INTERFACE)?;
+        #[cfg(unix)]
+        {
+            // Linux: detach kernel drivers and claim interfaces
+            Self::detach_and_claim_interface(&mut device_handle, HID_INTERFACE)?;
+        }
 
-        // On Windows, try to claim display interface but don't fail if it doesn't work
-        match Self::claim_interface_with_detach(&mut device_handle, DISPLAY_INTERFACE) {
-            Ok(()) => println!(
-                "✅ Display interface {} claimed successfully",
-                DISPLAY_INTERFACE
-            ),
-            Err(e) => {
-                println!(
-                    "⚠️  Could not claim display interface {}: {}",
-                    DISPLAY_INTERFACE, e
-                );
-                println!("   Trying alternative interface 3...");
+        // Platform-specific display interface handling
+        #[cfg(windows)]
+        {
+            // On Windows, try to claim display interface but don't fail if it doesn't work
+            match Self::claim_interface_with_detach(&mut device_handle, DISPLAY_INTERFACE) {
+                Ok(()) => println!(
+                    "✅ Display interface {} claimed successfully",
+                    DISPLAY_INTERFACE
+                ),
+                Err(e) => {
+                    println!(
+                        "⚠️  Could not claim display interface {}: {}",
+                        DISPLAY_INTERFACE, e
+                    );
+                    println!("   Trying alternative interface 3...");
 
-                // Try Interface 3 as backup
-                match Self::claim_interface_with_detach(&mut device_handle, 3) {
-                    Ok(()) => {
-                        println!("✅ Alternative interface 3 claimed successfully");
-                        // Update display endpoint to use Interface 3's bulk endpoint
-                        println!("   📝 Note: Using endpoint 0x02 instead of 0x04");
-                    }
-                    Err(e2) => {
-                        println!("⚠️  Alternative interface 3 also failed: {}", e2);
-                        println!("   💡 Consider installing WinUSB driver using Zadig");
-                        println!("   💡 Or use HID-only mode for input/LEDs");
+                    // Try Interface 3 as backup
+                    match Self::claim_interface_with_detach(&mut device_handle, 3) {
+                        Ok(()) => {
+                            println!("✅ Alternative interface 3 claimed successfully");
+                            // Update display endpoint to use Interface 3's bulk endpoint
+                            println!("   📝 Note: Using endpoint 0x02 instead of 0x04");
+                        }
+                        Err(e2) => {
+                            println!("⚠️  Alternative interface 3 also failed: {}", e2);
+                            println!("   💡 Consider installing WinUSB driver using Zadig");
+                            println!("   💡 Or use HID-only mode for input/LEDs");
+                        }
                     }
                 }
             }
         }
 
-        // Try to open HID device for LED communication
+        #[cfg(unix)]
+        {
+            // On Linux, try to claim display interface
+            match Self::detach_and_claim_interface(&mut device_handle, DISPLAY_INTERFACE) {
+                Ok(()) => println!(
+                    "✅ Display interface {} claimed successfully",
+                    DISPLAY_INTERFACE
+                ),
+                Err(e) => {
+                    println!(
+                        "⚠️  Could not claim display interface {}: {}",
+                        DISPLAY_INTERFACE, e
+                    );
+                    println!("   💡 Check udev rules and user permissions");
+                }
+            }
+        }
+
+        // Platform-specific HID device initialization
+        #[cfg(windows)]
         let (hid_device, hid_api) = {
             match HidApi::new() {
                 Ok(api) => {
@@ -154,7 +188,9 @@ impl MaschineMK3 {
         Ok(Self {
             device_handle,
             context,
+            #[cfg(windows)]
             hid_device,
+            #[cfg(windows)]
             _hid_api: hid_api,
 
             // Initialize LED state management
@@ -170,7 +206,8 @@ impl MaschineMK3 {
         })
     }
 
-    /// Detach kernel driver and claim interface
+    /// Windows-specific: Claim interface without kernel driver detachment
+    #[cfg(windows)]
     fn claim_interface_with_detach(
         handle: &mut DeviceHandle<Context>,
         interface: u8,
@@ -178,6 +215,48 @@ impl MaschineMK3 {
         println!("🔧 Attempting to claim interface {}", interface);
 
         // Windows doesn't support kernel driver detachment
+        match handle.claim_interface(interface) {
+            Ok(()) => {
+                println!("✅ Successfully claimed interface {}", interface);
+                Ok(())
+            }
+            Err(e) => {
+                println!("❌ Failed to claim interface {}: {:?}", interface, e);
+                Err(MK3Error::Usb(e))
+            }
+        }
+    }
+
+    /// Linux-specific: Detach kernel driver and claim interface
+    #[cfg(unix)]
+    fn detach_and_claim_interface(
+        handle: &mut DeviceHandle<Context>,
+        interface: u8,
+    ) -> Result<()> {
+        println!("🔧 Attempting to detach kernel driver and claim interface {}", interface);
+
+        // Try to detach kernel driver if it's attached
+        match handle.kernel_driver_active(interface) {
+            Ok(true) => {
+                println!("📤 Detaching kernel driver from interface {}", interface);
+                match handle.detach_kernel_driver(interface) {
+                    Ok(()) => println!("✅ Kernel driver detached from interface {}", interface),
+                    Err(e) => {
+                        println!("⚠️  Failed to detach kernel driver: {:?}", e);
+                        // Continue anyway - might still work
+                    }
+                }
+            }
+            Ok(false) => {
+                println!("✅ No kernel driver attached to interface {}", interface);
+            }
+            Err(e) => {
+                println!("⚠️  Could not check kernel driver status: {:?}", e);
+                // Continue anyway
+            }
+        }
+
+        // Claim the interface
         match handle.claim_interface(interface) {
             Ok(()) => {
                 println!("✅ Successfully claimed interface {}", interface);
@@ -263,28 +342,44 @@ impl MaschineMK3 {
 
     /// Write LED data to the device
     fn write_leds(&self, data: &[u8]) -> Result<()> {
-        // Use HID API for LED communication (interface 4 requires HID driver)
-        if let Some(ref hid_dev) = self.hid_device {
-            match hid_dev.write(data) {
-                Ok(_) => return Ok(()),
-                Err(e) => {
-                    eprintln!("HID LED write failed: {}", e);
-                    return Err(MK3Error::Io(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        e,
-                    )));
+        #[cfg(windows)]
+        {
+            // Windows: Use HID API for LED communication (interface 4 requires HID driver)
+            if let Some(ref hid_dev) = self.hid_device {
+                match hid_dev.write(data) {
+                    Ok(_) => return Ok(()),
+                    Err(e) => {
+                        eprintln!("HID LED write failed: {}", e);
+                        return Err(MK3Error::Io(std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            e,
+                        )));
+                    }
                 }
+            }
+
+            // Fallback to USB interrupt transfer if HID failed
+            let timeout = Duration::from_millis(100);
+            match self
+                .device_handle
+                .write_interrupt(OUTPUT_ENDPOINT, data, timeout)
+            {
+                Ok(_) => Ok(()),
+                Err(e) => Err(MK3Error::Usb(e)),
             }
         }
 
-        // Fallback to USB interrupt transfer if HID failed
-        let timeout = Duration::from_millis(100);
-        match self
-            .device_handle
-            .write_interrupt(OUTPUT_ENDPOINT, data, timeout)
+        #[cfg(unix)]
         {
-            Ok(_) => Ok(()),
-            Err(e) => Err(MK3Error::Usb(e)),
+            // Linux: Use direct USB interrupt transfer
+            let timeout = Duration::from_millis(100);
+            match self
+                .device_handle
+                .write_interrupt(OUTPUT_ENDPOINT, data, timeout)
+            {
+                Ok(_) => Ok(()),
+                Err(e) => Err(MK3Error::Usb(e)),
+            }
         }
     }
 
@@ -439,7 +534,12 @@ impl MaschineMK3 {
         // Clone the device handle for the thread
         let device = self.device_handle.device();
         let mut thread_device_handle = device.open()?;
+        
+        #[cfg(windows)]
         Self::claim_interface_with_detach(&mut thread_device_handle, HID_INTERFACE)?;
+        
+        #[cfg(unix)]
+        Self::detach_and_claim_interface(&mut thread_device_handle, HID_INTERFACE)?;
 
         let stop_signal = Arc::clone(&self.input_stop_signal);
         let mut tracker = InputTracker::new();
@@ -776,26 +876,41 @@ impl MaschineMK3 {
     }
 
     fn write_led_data(&self, data: &[u8]) -> Result<()> {
-        if let Some(ref hid_dev) = self.hid_device {
-            match hid_dev.write(data) {
-                Ok(_) => return Ok(()),
-                Err(e) => {
-                    eprintln!("HID LED write failed: {}", e);
-                    return Err(MK3Error::Io(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        e,
-                    )));
+        #[cfg(windows)]
+        {
+            if let Some(ref hid_dev) = self.hid_device {
+                match hid_dev.write(data) {
+                    Ok(_) => return Ok(()),
+                    Err(e) => {
+                        eprintln!("HID LED write failed: {}", e);
+                        return Err(MK3Error::Io(std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            e,
+                        )));
+                    }
                 }
+            }
+
+            let timeout = Duration::from_millis(100);
+            match self
+                .device_handle
+                .write_interrupt(OUTPUT_ENDPOINT, data, timeout)
+            {
+                Ok(_) => Ok(()),
+                Err(e) => Err(MK3Error::Usb(e)),
             }
         }
 
-        let timeout = Duration::from_millis(100);
-        match self
-            .device_handle
-            .write_interrupt(OUTPUT_ENDPOINT, data, timeout)
+        #[cfg(unix)]
         {
-            Ok(_) => Ok(()),
-            Err(e) => Err(MK3Error::Usb(e)),
+            let timeout = Duration::from_millis(100);
+            match self
+                .device_handle
+                .write_interrupt(OUTPUT_ENDPOINT, data, timeout)
+            {
+                Ok(_) => Ok(()),
+                Err(e) => Err(MK3Error::Usb(e)),
+            }
         }
     }
 }

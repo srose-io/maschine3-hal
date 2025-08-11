@@ -3,7 +3,7 @@ name = "maschine3-hal"
 version = "0.1.0"
 edition = "2021"
 authors = ["Spencer Rose <spencer@srose.io>"]
-description = "Hardware abstraction layer for Native Instruments Maschine MK3 controller (Windows only)"
+description = "Hardware abstraction layer for Native Instruments Maschine MK3 controller"
 documentation = "https://docs.rs/maschine3-hal"
 repository = "https://github.com/srose-io/maschine3-hal"
 license = "MIT OR Apache-2.0"
@@ -19,8 +19,10 @@ exclude = [
 
 [dependencies]
 rusb = "0.9"
-hidapi = "2.6"
 thiserror = "1.0"
+
+[target.'cfg(windows)'.dependencies]
+hidapi = "2.6"
 windows = { version = "0.58", features = [
     "Win32_Foundation",
     "Win32_Storage_FileSystem", 
@@ -29,3 +31,6 @@ windows = { version = "0.58", features = [
     "Win32_Security",
     "Win32_System_SystemServices"
 ] }
+
+[target.'cfg(unix)'.dependencies]
+# Linux-specific dependencies can be added here if needed

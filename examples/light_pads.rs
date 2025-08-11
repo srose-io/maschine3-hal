@@ -58,7 +58,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 InputEvent::PadEvent {
                     pad_number,
-                    event_type: mk3_hal::PadEventType::Hit,
+                    event_type: maschine3_hal::PadEventType::Hit,
                     value,
                 } => {
                     println!("🥁 Pad {} hit (velocity: {})", pad_number + 1, value);
@@ -81,7 +81,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 
                 InputEvent::PadEvent {
                     pad_number,
-                    event_type: mk3_hal::PadEventType::HitRelease | mk3_hal::PadEventType::TouchRelease,
+                    event_type: maschine3_hal::PadEventType::HitRelease | maschine3_hal::PadEventType::TouchRelease,
                     ..
                 } => {
                     println!("🔼 Pad {} released", pad_number + 1);
@@ -90,7 +90,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 
                 InputEvent::PadEvent {
                     pad_number,
-                    event_type: mk3_hal::PadEventType::Aftertouch,
+                    event_type: maschine3_hal::PadEventType::Aftertouch,
                     value,
                 } => {
                     // Update brightness based on aftertouch pressure

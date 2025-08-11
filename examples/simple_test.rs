@@ -35,7 +35,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 InputEvent::ButtonPressed(element) => {
                     println!("   ▶️  {} button pressed!", element.name());
                 }
-                InputEvent::PadEvent { pad_number, event_type: mk3_hal::PadEventType::Hit, value } => {
+                InputEvent::PadEvent { pad_number, event_type: maschine3_hal::PadEventType::Hit, value } => {
                     println!("   🥁 Pad {} hit with velocity {}", pad_number + 1, value);
                 }
                 InputEvent::KnobChanged { element, value, .. } => {
