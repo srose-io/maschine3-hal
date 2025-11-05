@@ -100,10 +100,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
 
                 _ => {
-                    // Other events like knob changes - just log occasionally
-                    if start_time.elapsed().as_millis() % 1000 < 100 {
-                        println!("🎛️ {}", event.description());
-                    }
+                    // Other events like knob changes
+                    println!("🎛️ {}", event.description());
                 }
             }
         }

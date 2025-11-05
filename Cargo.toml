@@ -17,6 +17,9 @@ exclude = [
     "*.raw"
 ]
 
+[lib]
+crate-type = ["rlib", "cdylib"]
+
 [dependencies]
 rusb = "0.9"
 thiserror = "1.0"

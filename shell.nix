@@ -7,6 +7,7 @@ pkgs.mkShell {
     gcc
     pkg-config
     libusb1
+    patchelf
   ];
 
   shellHook = ''

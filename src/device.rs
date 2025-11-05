@@ -55,6 +55,9 @@ pub struct MaschineMK3 {
     input_thread: Option<JoinHandle<()>>,
     input_stop_signal: Arc<Mutex<bool>>,
     input_event_receiver: Option<Receiver<InputEvent>>,
+
+    // Display interface status
+    display_interface_available: bool,
 }
 
 impl MaschineMK3 {
@@ -101,13 +104,16 @@ impl MaschineMK3 {
 
         // Platform-specific display interface handling
         #[cfg(windows)]
-        {
+        let display_interface_available = {
             // On Windows, try to claim display interface but don't fail if it doesn't work
             match Self::claim_interface_with_detach(&mut device_handle, DISPLAY_INTERFACE) {
-                Ok(()) => println!(
-                    "✅ Display interface {} claimed successfully",
-                    DISPLAY_INTERFACE
-                ),
+                Ok(()) => {
+                    println!(
+                        "✅ Display interface {} claimed successfully",
+                        DISPLAY_INTERFACE
+                    );
+                    true
+                }
                 Err(e) => {
                     println!(
                         "⚠️  Could not claim display interface {}: {}",
@@ -121,34 +127,40 @@ impl MaschineMK3 {
                             println!("✅ Alternative interface 3 claimed successfully");
                             // Update display endpoint to use Interface 3's bulk endpoint
                             println!("   📝 Note: Using endpoint 0x02 instead of 0x04");
+                            true
                         }
                         Err(e2) => {
                             println!("⚠️  Alternative interface 3 also failed: {}", e2);
                             println!("   💡 Consider installing WinUSB driver using Zadig");
                             println!("   💡 Or use HID-only mode for input/LEDs");
+                            false
                         }
                     }
                 }
             }
-        }
+        };
 
         #[cfg(unix)]
-        {
+        let display_interface_available = {
             // On Linux, try to claim display interface
             match Self::detach_and_claim_interface(&mut device_handle, DISPLAY_INTERFACE) {
-                Ok(()) => println!(
-                    "✅ Display interface {} claimed successfully",
-                    DISPLAY_INTERFACE
-                ),
+                Ok(()) => {
+                    println!(
+                        "✅ Display interface {} claimed successfully",
+                        DISPLAY_INTERFACE
+                    );
+                    true
+                }
                 Err(e) => {
                     println!(
                         "⚠️  Could not claim display interface {}: {}",
                         DISPLAY_INTERFACE, e
                     );
                     println!("   💡 Check udev rules and user permissions");
+                    false
                 }
             }
-        }
+        };
 
         // Platform-specific HID device initialization
         #[cfg(windows)]
@@ -203,6 +215,9 @@ impl MaschineMK3 {
             input_thread: None,
             input_stop_signal: Arc::new(Mutex::new(false)),
             input_event_receiver: None,
+
+            // Display interface status
+            display_interface_available,
         })
     }
 
@@ -324,8 +339,12 @@ impl MaschineMK3 {
 
     /// Read input data from the device
     fn read_input(&self) -> Result<Vec<u8>> {
+        self.read_input_with_timeout(Duration::from_millis(100))
+    }
+
+    /// Read input with custom timeout (for performance-critical applications)
+    fn read_input_with_timeout(&self, timeout: Duration) -> Result<Vec<u8>> {
         let mut buffer = vec![0u8; 64]; // Max packet size
-        let timeout = Duration::from_millis(100);
 
         match self
             .device_handle
@@ -385,11 +404,81 @@ impl MaschineMK3 {
 
     /// Write display data to the device
     pub fn write_display(&self, data: &[u8]) -> Result<()> {
+        if !self.display_interface_available {
+            eprintln!("⚠️  Display interface not available - write ignored");
+            eprintln!("   Check Unity console for display interface claim status");
+            return Err(MK3Error::Io(std::io::Error::new(
+                std::io::ErrorKind::NotConnected,
+                "Display interface not claimed",
+            )));
+        }
+
         let timeout = Duration::from_millis(1000); // Longer timeout for display data
         self.device_handle
             .write_bulk(DISPLAY_ENDPOINT, data, timeout)?;
         Ok(())
     }
+
+    /// Check if the display interface is available for writing
+    pub fn is_display_available(&self) -> bool {
+        self.display_interface_available
+    }
+    /// Write RGB565 framebuffer to display with proper packet format
+    /// framebuffer_data should be 480×272×2 bytes of RGB565 data
+    /// display_id: 0 = Left display, 1 = Right display
+    pub fn write_display_framebuffer(&self, display_id: u8, framebuffer_data: &[u8]) -> Result<()> {
+        if display_id > 1 {
+            return Err(MK3Error::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("display_id must be 0 (left) or 1 (right), got {}", display_id),
+            )));
+        }
+
+        const WIDTH: u16 = 480;
+        const HEIGHT: u16 = 272;
+        const PIXEL_COUNT: usize = (WIDTH as usize) * (HEIGHT as usize);
+        const EXPECTED_SIZE: usize = PIXEL_COUNT * 2;
+
+        if framebuffer_data.len() != EXPECTED_SIZE {
+            return Err(MK3Error::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("Framebuffer must be {} bytes, got {}", EXPECTED_SIZE, framebuffer_data.len()),
+            )));
+        }
+
+        const HEADER_LEN: usize = 16;
+        const CMD_LEN: usize = 4;
+        let packet_size = HEADER_LEN + CMD_LEN + EXPECTED_SIZE + CMD_LEN * 2;
+        let mut packet = vec![0u8; packet_size];
+        let mut offset = 0;
+
+        // Header
+        packet[0] = 0x84; packet[1] = 0x00; packet[2] = display_id; packet[3] = 0x60;
+        packet[12] = (WIDTH >> 8) as u8; packet[13] = (WIDTH & 0xFF) as u8;
+        packet[14] = (HEIGHT >> 8) as u8; packet[15] = (HEIGHT & 0xFF) as u8;
+        offset += HEADER_LEN;
+
+        // Transmit command
+        let half_pixels = PIXEL_COUNT as u32 / 2;
+        packet[offset] = 0x00;
+        packet[offset + 1] = (half_pixels >> 16) as u8;
+        packet[offset + 2] = (half_pixels >> 8) as u8;
+        packet[offset + 3] = (half_pixels & 0xFF) as u8;
+        offset += CMD_LEN;
+
+        // Pixel data
+        packet[offset..offset + EXPECTED_SIZE].copy_from_slice(framebuffer_data);
+        offset += EXPECTED_SIZE;
+
+        // Blit command
+        packet[offset] = 0x03; offset += CMD_LEN;
+
+        // End command
+        packet[offset] = 0x40;
+
+        self.write_display(&packet)
+    }
+
 
     /// Write button LED state
     pub fn write_button_leds(&self, state: &ButtonLedState) -> Result<()> {
@@ -621,6 +710,18 @@ impl MaschineMK3 {
     /// Poll for input events (blocking with timeout)
     pub fn poll_input_events(&mut self) -> Result<Vec<InputEvent>> {
         let data = self.read_input()?;
+
+        if data.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        Self::process_input_packet(&mut self.input_tracker, &data)
+    }
+
+    /// Fast poll for input events with minimal timeout (1ms)
+    /// Recommended for game loops and real-time applications
+    pub fn poll_input_events_fast(&mut self) -> Result<Vec<InputEvent>> {
+        let data = self.read_input_with_timeout(Duration::from_millis(1))?;
 
         if data.is_empty() {
             return Ok(Vec::new());

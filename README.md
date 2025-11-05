@@ -9,11 +9,12 @@ A cross-platform Rust hardware abstraction layer (HAL) for the Native Instrument
 ## Features
 
 - ✅ **Cross-Platform**: Windows and Linux support with optimized communication paths
-- ✅ **Real-time Input**: Button, pad, knob, and touch strip events with state tracking  
+- ✅ **Real-time Input**: Button, pad, knob, and touch strip events with state tracking
 - ✅ **LED Control**: Full RGB control for pads and group buttons, brightness control for other LEDs
 - ✅ **Display Graphics**: 480x272 RGB565 display rendering with optimized bulk transfers
 - ✅ **High Performance**: Platform-optimized USB communication for minimal latency
 - ✅ **Safe API**: Type-safe abstractions over low-level USB protocols
+- ✅ **Unity Integration**: C FFI layer for Unity Engine game development (see [Unity Integration Guide](UNITY_INTEGRATION.md))
 
 ## Platform Support
 
@@ -117,6 +118,24 @@ sudo pacman -S systemd libusb gcc
 
 For detailed Linux setup instructions, see [`LINUX_SETUP.md`](LINUX_SETUP.md).
 
+## Unity Integration
+
+This library can be used in Unity Engine projects via C FFI bindings.
+
+**Quick Start**:
+```bash
+# Build the native library
+cargo build --release
+
+# Copy to Unity (or run build script with Unity project path)
+./build-unity.sh /path/to/UnityProject  # Linux/macOS
+build-unity.bat C:\path\to\UnityProject  # Windows
+```
+
+Then attach the `MaschineMK3Native` component to a GameObject in Unity.
+
+See the [Unity Integration Guide](UNITY_INTEGRATION.md) for complete documentation, API reference, and examples.
+
 ## Examples
 
 Run the included examples to test your setup:
@@ -125,7 +144,7 @@ Run the included examples to test your setup:
 # Basic connectivity and LED test
 cargo run --example simple_test
 
-# Real-time input monitoring  
+# Real-time input monitoring
 cargo run --example input_monitor
 
 # Display color patterns

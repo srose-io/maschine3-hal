@@ -48,10 +48,13 @@ pub mod error;
 pub mod input;
 pub mod output;
 
+// FFI module for Unity/C interop
+pub mod ffi;
+
 pub use device::MaschineMK3;
 pub use error::MK3Error;
 pub use input::{
-    AudioState, ButtonState, InputElement, InputEvent, InputState, InputTracker, KnobState, 
+    AudioState, ButtonState, InputElement, InputEvent, InputState, InputTracker, KnobState,
     PadEvent, PadEventType, PadState, TouchStripState,
 };
 pub use output::{
