@@ -135,8 +135,17 @@ public class MaschineMK3Native : MonoBehaviour
 
     [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
     private static extern int mk3_flush_leds(IntPtr device);
+
     [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
     private static extern int mk3_is_display_available(IntPtr device);
+
+    [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+    private static extern int mk3_write_display_rgb888_dirty(
+        IntPtr device,
+        uint displayId,
+        byte[] rgb888Data,
+        uint dataLen
+    );
 
     // Instance variables
     private IntPtr deviceHandle = IntPtr.Zero;
@@ -368,6 +377,43 @@ public class MaschineMK3Native : MonoBehaviour
     public bool WriteDisplay(byte[] rgb565Data)
     {
         return WriteDisplay(DisplayId.Left, rgb565Data);
+    }
+
+    /// <summary>
+    /// Write RGB888 framebuffer with automatic dirty region detection
+    /// Only sends changed pixels for better performance on incremental updates
+    /// </summary>
+    /// <param name="displayId">Which display to write to (Left or Right)</param>
+    /// <param name="rgb888Data">RGB888 pixel data (391,680 bytes)</param>
+    /// <returns>True if successful</returns>
+    public bool WriteDisplayDirty(DisplayId displayId, byte[] rgb888Data)
+    {
+        if (deviceHandle == IntPtr.Zero)
+            return false;
+
+        const int expectedSize = 480 * 272 * 3; // RGB888 = 3 bytes per pixel
+        if (rgb888Data.Length != expectedSize)
+        {
+            Debug.LogError($"Invalid display data size. Expected {expectedSize}, got {rgb888Data.Length}");
+            return false;
+        }
+
+        int result = mk3_write_display_rgb888_dirty(deviceHandle, (uint)displayId, rgb888Data, (uint)rgb888Data.Length);
+        if (result != MK3_SUCCESS)
+        {
+            Debug.LogError($"Error writing display with dirty detection: {result}");
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Write RGB888 framebuffer to the left display with dirty detection (default behavior)
+    /// </summary>
+    public bool WriteDisplayDirty(byte[] rgb888Data)
+    {
+        return WriteDisplayDirty(DisplayId.Left, rgb888Data);
     }
 
     // Unity lifecycle methods

@@ -79,14 +79,14 @@ if [ -n "$1" ]; then
     echo "Copied all libraries to: $PLUGINS_DIR/"
     ls -lh "$PLUGINS_DIR"/*.so*
 
+    mkdir -p "$UNITY_PROJECT/Assets/Plugins"
+    cp unity/MaschineMK3HardwareService.cs "$UNITY_PROJECT/Assets/GrowthSim/Scripts/Control/Hardware/"
+    echo "Updated MaschineMK3HardwareService.cs"
+
     # Copy C# scripts (always overwrite to get updates)
     mkdir -p "$UNITY_PROJECT/Assets/Plugins"
     cp unity/MaschineMK3Native.cs "$UNITY_PROJECT/Assets/Plugins/"
     echo "Updated MaschineMK3Native.cs"
-
-    mkdir -p "$UNITY_PROJECT/Assets/Scripts"
-    cp unity/MaschineExampleController.cs "$UNITY_PROJECT/Assets/Scripts/"
-    echo "Updated MaschineExampleController.cs"
 
     cp unity/DiagnosticHelper.cs "$UNITY_PROJECT/Assets/Scripts/"
     echo "Updated DiagnosticHelper.cs"

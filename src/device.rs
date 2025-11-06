@@ -22,6 +22,54 @@ const INPUT_ENDPOINT: u8 = 0x83;
 const OUTPUT_ENDPOINT: u8 = 0x03;
 const DISPLAY_ENDPOINT: u8 = 0x04; // Original endpoint 0x04 from interface 5
 
+/// Convert standard RGB888 (0-255) to Maschine's custom RGB565x format
+///
+/// The Maschine MK3 uses a non-standard RGB565 variant with bit packing: GGGB BBBB RRRR RGGG
+#[inline]
+fn rgb888_to_rgb565x(red: u8, green: u8, blue: u8) -> u16 {
+    let r5 = (red >> 3) as u16;
+    let g3high = (green >> 5) as u16;
+    let glow = ((green >> 2) & 7) as u16;
+    let b5 = (blue >> 3) as u16;
+
+    (glow << 13) | (b5 << 8) | (r5 << 3) | g3high
+}
+
+/// Convert RGB888 buffer to RGB565x buffer (with optional vertical flip)
+///
+/// # Parameters
+/// - `rgb888_data`: RGB888 data (3 bytes per pixel: R, G, B)
+/// - `rgb565x_out`: Output buffer for RGB565x data (2 bytes per pixel, little-endian)
+/// - `width`: Image width in pixels
+/// - `height`: Image height in pixels
+/// - `flip_y`: Flip vertically (needed for Unity textures which are upside-down)
+fn convert_rgb888_to_rgb565x(rgb888_data: &[u8], rgb565x_out: &mut [u8], width: usize, height: usize, flip_y: bool) {
+    assert!(rgb888_data.len() % 3 == 0, "RGB888 data must be multiple of 3 bytes");
+    assert!(rgb565x_out.len() == (rgb888_data.len() / 3) * 2, "Output buffer size mismatch");
+    assert!(rgb888_data.len() == width * height * 3, "Data size doesn't match width × height");
+
+    for y in 0..height {
+        for x in 0..width {
+            // Source pixel index (in RGB888 buffer)
+            let src_y = if flip_y { height - 1 - y } else { y };
+            let src_idx = (src_y * width + x) * 3;
+
+            // Destination pixel index (in RGB565x buffer)
+            let dst_idx = (y * width + x) * 2;
+
+            let r = rgb888_data[src_idx];
+            let g = rgb888_data[src_idx + 1];
+            let b = rgb888_data[src_idx + 2];
+
+            let rgb565x = rgb888_to_rgb565x(r, g, b);
+
+            // Store as little-endian
+            rgb565x_out[dst_idx] = (rgb565x & 0xFF) as u8;
+            rgb565x_out[dst_idx + 1] = (rgb565x >> 8) as u8;
+        }
+    }
+}
+
 /// Main interface for communicating with a Maschine MK3 controller.
 /// 
 /// Provides methods for reading input events and controlling LEDs/display.
@@ -58,6 +106,9 @@ pub struct MaschineMK3 {
 
     // Display interface status
     display_interface_available: bool,
+
+    // Display state tracking for dirty region detection
+    display_state: [Option<Vec<u8>>; 2], // Track RGB888 state for displays 0 and 1
 }
 
 impl MaschineMK3 {
@@ -218,6 +269,9 @@ impl MaschineMK3 {
 
             // Display interface status
             display_interface_available,
+
+            // Initialize display state tracking
+            display_state: [None, None],
         })
     }
 
@@ -413,7 +467,10 @@ impl MaschineMK3 {
             )));
         }
 
-        let timeout = Duration::from_millis(1000); // Longer timeout for display data
+        // Optimized timeout: 261KB at USB 2.0 High Speed (480 Mbps theoretical)
+        // Realistic bulk transfer: ~30-40 MB/s = ~7-9ms for 261KB
+        // Add safety margin: 50ms timeout is plenty
+        let timeout = Duration::from_millis(50);
         self.device_handle
             .write_bulk(DISPLAY_ENDPOINT, data, timeout)?;
         Ok(())
@@ -423,10 +480,47 @@ impl MaschineMK3 {
     pub fn is_display_available(&self) -> bool {
         self.display_interface_available
     }
-    /// Write RGB565 framebuffer to display with proper packet format
+    /// Write RGB565 framebuffer to display with proper packet format (full screen)
     /// framebuffer_data should be 480×272×2 bytes of RGB565 data
     /// display_id: 0 = Left display, 1 = Right display
     pub fn write_display_framebuffer(&self, display_id: u8, framebuffer_data: &[u8]) -> Result<()> {
+        const WIDTH: u16 = 480;
+        const HEIGHT: u16 = 272;
+        self.write_display_region(display_id, 0, 0, WIDTH, HEIGHT, framebuffer_data)
+    }
+
+    /// Write RGB565 data to a specific region of the display
+    ///
+    /// # Parameters
+    /// - `display_id`: 0 = Left display, 1 = Right display
+    /// - `x`: Starting X coordinate (0-479)
+    /// - `y`: Starting Y coordinate (0-271)
+    /// - `width`: Region width in pixels
+    /// - `height`: Region height in pixels
+    /// - `region_data`: RGB565 pixel data (width × height × 2 bytes)
+    ///
+    /// # Performance
+    /// Smaller regions = faster transfers. For example:
+    /// - Full screen (480×272): ~33ms
+    /// - Half screen (480×136): ~17ms
+    /// - Quarter screen (240×136): ~8ms
+    ///
+    /// # Example
+    /// ```no_run
+    /// // Update only top-left 100x100 region
+    /// let region_pixels = vec![0u8; 100 * 100 * 2]; // Your RGB565 data
+    /// device.write_display_region(0, 0, 0, 100, 100, &region_pixels)?;
+    /// ```
+    pub fn write_display_region(
+        &self,
+        display_id: u8,
+        x: u16,
+        y: u16,
+        width: u16,
+        height: u16,
+        region_data: &[u8],
+    ) -> Result<()> {
+        // Validate parameters
         if display_id > 1 {
             return Err(MK3Error::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
@@ -434,32 +528,56 @@ impl MaschineMK3 {
             )));
         }
 
-        const WIDTH: u16 = 480;
-        const HEIGHT: u16 = 272;
-        const PIXEL_COUNT: usize = (WIDTH as usize) * (HEIGHT as usize);
-        const EXPECTED_SIZE: usize = PIXEL_COUNT * 2;
+        const MAX_WIDTH: u16 = 480;
+        const MAX_HEIGHT: u16 = 272;
 
-        if framebuffer_data.len() != EXPECTED_SIZE {
+        if x >= MAX_WIDTH || y >= MAX_HEIGHT {
             return Err(MK3Error::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
-                format!("Framebuffer must be {} bytes, got {}", EXPECTED_SIZE, framebuffer_data.len()),
+                format!("Region start ({}, {}) out of bounds (max: {}, {})", x, y, MAX_WIDTH - 1, MAX_HEIGHT - 1),
+            )));
+        }
+
+        if x + width > MAX_WIDTH || y + height > MAX_HEIGHT {
+            return Err(MK3Error::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("Region ({}x{} at {},{}) exceeds display bounds ({}x{})",
+                    width, height, x, y, MAX_WIDTH, MAX_HEIGHT),
+            )));
+        }
+
+        let pixel_count = (width as usize) * (height as usize);
+        let expected_size = pixel_count * 2; // RGB565 = 2 bytes per pixel
+
+        if region_data.len() != expected_size {
+            return Err(MK3Error::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("Region data must be {} bytes ({}x{} pixels), got {}",
+                    expected_size, width, height, region_data.len()),
             )));
         }
 
         const HEADER_LEN: usize = 16;
         const CMD_LEN: usize = 4;
-        let packet_size = HEADER_LEN + CMD_LEN + EXPECTED_SIZE + CMD_LEN * 2;
+        // Check if we need padding for odd pixel counts
+        let needs_padding = pixel_count % 2 == 1;
+        let padding_bytes = if needs_padding { 2 } else { 0 }; // One RGB565 pixel
+        let packet_size = HEADER_LEN + CMD_LEN + expected_size + padding_bytes + CMD_LEN * 2;
         let mut packet = vec![0u8; packet_size];
         let mut offset = 0;
 
-        // Header
+        // Header with region coordinates
         packet[0] = 0x84; packet[1] = 0x00; packet[2] = display_id; packet[3] = 0x60;
-        packet[12] = (WIDTH >> 8) as u8; packet[13] = (WIDTH & 0xFF) as u8;
-        packet[14] = (HEIGHT >> 8) as u8; packet[15] = (HEIGHT & 0xFF) as u8;
+        packet[8] = (x >> 8) as u8; packet[9] = (x & 0xFF) as u8;           // X start
+        packet[10] = (y >> 8) as u8; packet[11] = (y & 0xFF) as u8;         // Y start
+        packet[12] = (width >> 8) as u8; packet[13] = (width & 0xFF) as u8; // Width
+        packet[14] = (height >> 8) as u8; packet[15] = (height & 0xFF) as u8; // Height
         offset += HEADER_LEN;
 
         // Transmit command
-        let half_pixels = PIXEL_COUNT as u32 / 2;
+        // Device expects count in pixel pairs (half_pixels)
+        let padded_pixel_count = if needs_padding { pixel_count + 1 } else { pixel_count };
+        let half_pixels = (padded_pixel_count as u32) / 2;
         packet[offset] = 0x00;
         packet[offset + 1] = (half_pixels >> 16) as u8;
         packet[offset + 2] = (half_pixels >> 8) as u8;
@@ -467,8 +585,15 @@ impl MaschineMK3 {
         offset += CMD_LEN;
 
         // Pixel data
-        packet[offset..offset + EXPECTED_SIZE].copy_from_slice(framebuffer_data);
-        offset += EXPECTED_SIZE;
+        packet[offset..offset + expected_size].copy_from_slice(region_data);
+        offset += expected_size;
+
+        // Pad with one black pixel (RGB565: 0x0000) if pixel count was odd
+        if needs_padding {
+            packet[offset] = 0;
+            packet[offset + 1] = 0;
+            offset += 2;
+        }
 
         // Blit command
         packet[offset] = 0x03; offset += CMD_LEN;
@@ -477,6 +602,263 @@ impl MaschineMK3 {
         packet[offset] = 0x40;
 
         self.write_display(&packet)
+    }
+
+    /// Write RGB888 data to a region (convenience method with automatic conversion)
+    ///
+    /// This method accepts standard RGB888 data (3 bytes per pixel) and automatically
+    /// converts it to the Maschine's RGB565x format before sending.
+    ///
+    /// # Parameters
+    /// - `display_id`: 0 = Left display, 1 = Right display
+    /// - `x`: Starting X coordinate (0-479)
+    /// - `y`: Starting Y coordinate (0-271)
+    /// - `width`: Region width in pixels
+    /// - `height`: Region height in pixels
+    /// - `rgb888_data`: Standard RGB888 pixel data (width × height × 3 bytes, R-G-B order)
+    ///
+    /// # Note
+    /// This method does NOT flip the Y-axis. If you're using Unity textures, you need to
+    /// flip them before extracting the region data.
+    ///
+    /// # Example
+    /// ```no_run
+    /// // Update 100x100 region with standard RGB data
+    /// let mut rgb_data = vec![0u8; 100 * 100 * 3];
+    /// // Fill with red
+    /// for i in 0..(100 * 100) {
+    ///     rgb_data[i * 3] = 255;     // Red
+    ///     rgb_data[i * 3 + 1] = 0;   // Green
+    ///     rgb_data[i * 3 + 2] = 0;   // Blue
+    /// }
+    /// device.write_display_region_rgb888(0, 0, 0, 100, 100, &rgb_data)?;
+    /// ```
+    pub fn write_display_region_rgb888(
+        &self,
+        display_id: u8,
+        x: u16,
+        y: u16,
+        width: u16,
+        height: u16,
+        rgb888_data: &[u8],
+    ) -> Result<()> {
+        self.write_display_region_rgb888_internal(display_id, x, y, width, height, rgb888_data, false)
+    }
+
+    /// Internal method for RGB888 region writes with optional Y-flip control
+    fn write_display_region_rgb888_internal(
+        &self,
+        display_id: u8,
+        x: u16,
+        y: u16,
+        width: u16,
+        height: u16,
+        rgb888_data: &[u8],
+        flip_y: bool,
+    ) -> Result<()> {
+        let pixel_count = (width as usize) * (height as usize);
+        let expected_rgb888_size = pixel_count * 3;
+
+        if rgb888_data.len() != expected_rgb888_size {
+            return Err(MK3Error::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("RGB888 data must be {} bytes ({}x{} pixels × 3), got {}",
+                    expected_rgb888_size, width, height, rgb888_data.len()),
+            )));
+        }
+
+        // Convert RGB888 to RGB565x
+        let mut rgb565x_data = vec![0u8; pixel_count * 2];
+        convert_rgb888_to_rgb565x(
+            rgb888_data,
+            &mut rgb565x_data,
+            width as usize,
+            height as usize,
+            flip_y
+        );
+
+        // Use existing RGB565x method
+        self.write_display_region(display_id, x, y, width, height, &rgb565x_data)
+    }
+
+    /// Write RGB888 framebuffer to display (convenience method with automatic conversion)
+    ///
+    /// This method accepts standard RGB888 data for the full screen (480×272 pixels)
+    /// and automatically converts it to the Maschine's RGB565x format.
+    ///
+    /// # Parameters
+    /// - `display_id`: 0 = Left display, 1 = Right display
+    /// - `rgb888_data`: Standard RGB888 framebuffer (480 × 272 × 3 = 391,680 bytes)
+    ///
+    /// # Note
+    /// This method DOES flip the Y-axis for Unity texture compatibility.
+    /// Unity textures have (0,0) at bottom-left, but the display has (0,0) at top-left.
+    ///
+    /// # Example
+    /// ```no_run
+    /// let mut frame = vec![0u8; 480 * 272 * 3];
+    /// // Fill with blue
+    /// for i in 0..(480 * 272) {
+    ///     frame[i * 3] = 0;        // Red
+    ///     frame[i * 3 + 1] = 0;    // Green
+    ///     frame[i * 3 + 2] = 255;  // Blue
+    /// }
+    /// device.write_display_framebuffer_rgb888(0, &frame)?;
+    /// ```
+    pub fn write_display_framebuffer_rgb888(&self, display_id: u8, rgb888_data: &[u8]) -> Result<()> {
+        const WIDTH: u16 = 480;
+        const HEIGHT: u16 = 272;
+        // Full frame updates use Y-flip for Unity compatibility
+        self.write_display_region_rgb888_internal(display_id, 0, 0, WIDTH, HEIGHT, rgb888_data, true)
+    }
+
+    /// Write RGB888 framebuffer with dirty region detection
+    ///
+    /// This method tracks the current display state and only sends the minimal rectangular
+    /// region that contains all changed pixels. This significantly reduces USB bandwidth
+    /// for incremental updates.
+    ///
+    /// # Parameters
+    /// - `display_id`: 0 = Left display, 1 = Right display
+    /// - `rgb888_data`: Standard RGB888 framebuffer (480 × 272 × 3 = 391,680 bytes)
+    ///
+    /// # Performance
+    /// - First call: sends full screen and saves state
+    /// - Subsequent calls: detects changes and sends only the dirty rectangle
+    /// - No changes: skips USB transfer entirely
+    ///
+    /// # Example
+    /// ```no_run
+    /// let mut frame = vec![0u8; 480 * 272 * 3];
+    /// // First update: full screen
+    /// device.write_display_framebuffer_rgb888_dirty(0, &frame)?;
+    ///
+    /// // Change only a small region
+    /// for i in 0..100 {
+    ///     frame[i * 3] = 255; // Change first 100 pixels to red
+    /// }
+    /// // Second update: only sends the changed region
+    /// device.write_display_framebuffer_rgb888_dirty(0, &frame)?;
+    /// ```
+    pub fn write_display_framebuffer_rgb888_dirty(&mut self, display_id: u8, rgb888_data: &[u8]) -> Result<()> {
+        const WIDTH: usize = 480;
+        const HEIGHT: usize = 272;
+        const EXPECTED_SIZE: usize = WIDTH * HEIGHT * 3;
+
+        if display_id > 1 {
+            return Err(MK3Error::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("display_id must be 0 (left) or 1 (right), got {}", display_id),
+            )));
+        }
+
+        if rgb888_data.len() != EXPECTED_SIZE {
+            return Err(MK3Error::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("RGB888 data must be {} bytes (480×272×3), got {}", EXPECTED_SIZE, rgb888_data.len()),
+            )));
+        }
+
+        let display_idx = display_id as usize;
+
+        // STEP 1: Flip Unity's Y-inverted data to display coordinate space
+        // This way we store, compare, and send everything in the same space
+        let mut flipped_data = vec![0u8; EXPECTED_SIZE];
+        for y in 0..HEIGHT {
+            let src_y = HEIGHT - 1 - y; // Flip Y
+            let src_row_start = src_y * WIDTH * 3;
+            let dst_row_start = y * WIDTH * 3;
+            flipped_data[dst_row_start..dst_row_start + WIDTH * 3]
+                .copy_from_slice(&rgb888_data[src_row_start..src_row_start + WIDTH * 3]);
+        }
+
+        // First call: no previous state, send full screen
+        if self.display_state[display_idx].is_none() {
+            self.display_state[display_idx] = Some(flipped_data.clone());
+            return self.write_display_region_rgb888_internal(display_id, 0, 0, WIDTH as u16, HEIGHT as u16, &flipped_data, false);
+        }
+
+        let prev_state = self.display_state[display_idx].as_ref().unwrap();
+
+        // STEP 2: Compare with previous state (both in display space now)
+        let mut min_x = WIDTH;
+        let mut min_y = HEIGHT;
+        let mut max_x = 0;
+        let mut max_y = 0;
+        let mut has_changes = false;
+
+        for y in 0..HEIGHT {
+            for x in 0..WIDTH {
+                let pixel_idx = (y * WIDTH + x) * 3;
+
+                // Compare RGB values
+                if prev_state[pixel_idx] != flipped_data[pixel_idx]
+                    || prev_state[pixel_idx + 1] != flipped_data[pixel_idx + 1]
+                    || prev_state[pixel_idx + 2] != flipped_data[pixel_idx + 2]
+                {
+                    has_changes = true;
+                    min_x = min_x.min(x);
+                    min_y = min_y.min(y);
+                    max_x = max_x.max(x);
+                    max_y = max_y.max(y);
+                }
+            }
+        }
+
+        // No changes detected
+        if !has_changes {
+            return Ok(());
+        }
+
+        // Expand to nearest 8-pixel block boundaries to avoid artifacts
+        // This ensures we always send complete 8x8 aligned regions
+        const BLOCK_SIZE: usize = 8;
+
+        // Round down to 8-pixel boundary
+        min_x = (min_x / BLOCK_SIZE) * BLOCK_SIZE;
+        min_y = (min_y / BLOCK_SIZE) * BLOCK_SIZE;
+
+        // Round up to 8-pixel boundary, clamped to screen size
+        max_x = (((max_x + BLOCK_SIZE) / BLOCK_SIZE) * BLOCK_SIZE - 1).min(WIDTH - 1);
+        max_y = (((max_y + BLOCK_SIZE) / BLOCK_SIZE) * BLOCK_SIZE - 1).min(HEIGHT - 1);
+
+        // Calculate dirty rectangle dimensions (aligned to 8px blocks)
+        let dirty_width = (max_x - min_x + 1) as u16;
+        let dirty_height = (max_y - min_y + 1) as u16;
+
+        // Enforce minimum region size to avoid protocol issues with small updates
+        const MIN_REGION_SIZE: u16 = 8;
+
+        // If region is too small, fall back to full frame update
+        if dirty_width < MIN_REGION_SIZE || dirty_height < MIN_REGION_SIZE {
+            self.display_state[display_idx] = Some(flipped_data.clone());
+            return self.write_display_region_rgb888_internal(display_id, 0, 0, WIDTH as u16, HEIGHT as u16, &flipped_data, false);
+        }
+
+        // STEP 3: Extract dirty region (from flipped/display-space data)
+        let mut dirty_region = Vec::with_capacity((dirty_width as usize * dirty_height as usize * 3) as usize);
+        for y in min_y..=max_y {
+            for x in min_x..=max_x {
+                let pixel_idx = (y * WIDTH + x) * 3;
+                dirty_region.push(flipped_data[pixel_idx]);
+                dirty_region.push(flipped_data[pixel_idx + 1]);
+                dirty_region.push(flipped_data[pixel_idx + 2]);
+            }
+        }
+
+        // Update stored state (with flipped data)
+        self.display_state[display_idx] = Some(flipped_data);
+
+        // STEP 4: Send dirty region (no flip - already in display space)
+        self.write_display_region_rgb888_internal(
+            display_id,
+            min_x as u16,
+            min_y as u16,
+            dirty_width,
+            dirty_height,
+            &dirty_region,
+            false  // No flip - already in display coordinate space
+        )
     }
 
 
@@ -500,7 +882,7 @@ impl MaschineMK3 {
 
     /// Send raw data directly to the device (for testing/debugging)
     pub fn send_raw_data(&self, data: &[u8]) -> Result<()> {
-        let timeout = Duration::from_millis(1000);
+        let timeout = Duration::from_millis(50);
 
         // Try display endpoint first (bulk transfer)
         match self

@@ -316,6 +316,249 @@ pub unsafe extern "C" fn mk3_write_display(
     }
 }
 
+/// Writes a region of the display (partial screen update).
+///
+/// # Parameters
+/// - `device`: Device instance pointer
+/// - `display_id`: Display ID (0 = Left display, 1 = Right display)
+/// - `x`: Starting X coordinate (0-479)
+/// - `y`: Starting Y coordinate (0-271)
+/// - `width`: Region width in pixels
+/// - `height`: Region height in pixels
+/// - `rgb565_data`: Pointer to RGB565 region data (width × height × 2 bytes)
+/// - `data_len`: Length of the data buffer (must equal width × height × 2)
+///
+/// # Returns
+/// - `MK3_SUCCESS` on success
+/// - `MK3_ERROR_NULL_POINTER` if device or rgb565_data is NULL
+/// - `MK3_ERROR_INVALID_PARAMETER` if parameters are out of bounds or data_len is incorrect
+/// - `MK3_ERROR_COMMUNICATION` on USB communication error
+///
+/// # Performance
+/// Smaller regions transfer faster. For example:
+/// - Full screen (480×272): ~33ms
+/// - Half screen (480×136): ~17ms
+/// - Quarter screen (240×136): ~8ms
+///
+/// # Safety
+/// - `device` must be a valid device pointer
+/// - `rgb565_data` must point to valid RGB565 data of the specified length
+#[no_mangle]
+pub unsafe extern "C" fn mk3_write_display_region(
+    device: *mut MaschineMK3,
+    display_id: c_uint,
+    x: c_uint,
+    y: c_uint,
+    width: c_uint,
+    height: c_uint,
+    rgb565_data: *const u8,
+    data_len: c_uint,
+) -> c_int {
+    if device.is_null() || rgb565_data.is_null() {
+        return MK3_ERROR_NULL_POINTER;
+    }
+
+    if display_id > 1 || x > 479 || y > 271 || width == 0 || height == 0 {
+        return MK3_ERROR_INVALID_PARAMETER;
+    }
+
+    let expected_size = (width * height * 2) as usize;
+    if data_len as usize != expected_size {
+        return MK3_ERROR_INVALID_PARAMETER;
+    }
+
+    let device = &mut *device;
+    let data = slice::from_raw_parts(rgb565_data, data_len as usize);
+
+    match device.write_display_region(
+        display_id as u8,
+        x as u16,
+        y as u16,
+        width as u16,
+        height as u16,
+        data
+    ) {
+        Ok(_) => MK3_SUCCESS,
+        Err(_) => MK3_ERROR_COMMUNICATION,
+    }
+}
+
+/// Writes an RGB888 region to the display (with automatic conversion to RGB565x).
+///
+/// This is a convenience function that accepts standard RGB888 data (3 bytes per pixel)
+/// and automatically converts it to the Maschine's custom RGB565x format.
+///
+/// # Parameters
+/// - `device`: Device instance pointer
+/// - `display_id`: Display ID (0 = Left display, 1 = Right display)
+/// - `x`: Starting X coordinate (0-479)
+/// - `y`: Starting Y coordinate (0-271)
+/// - `width`: Region width in pixels
+/// - `height`: Region height in pixels
+/// - `rgb888_data`: Pointer to standard RGB888 data (width × height × 3 bytes, R-G-B order)
+/// - `data_len`: Length of the data buffer (must equal width × height × 3)
+///
+/// # Returns
+/// - `MK3_SUCCESS` on success
+/// - `MK3_ERROR_NULL_POINTER` if device or rgb888_data is NULL
+/// - `MK3_ERROR_INVALID_PARAMETER` if parameters are out of bounds or data_len is incorrect
+/// - `MK3_ERROR_COMMUNICATION` on USB communication error
+///
+/// # Performance
+/// This method performs conversion on the native side, so you don't need to handle the
+/// custom RGB565x format yourself. Perfect for Unity's Color32 or other standard formats.
+///
+/// # Safety
+/// - `device` must be a valid device pointer
+/// - `rgb888_data` must point to valid RGB888 data of the specified length
+#[no_mangle]
+pub unsafe extern "C" fn mk3_write_display_region_rgb888(
+    device: *mut MaschineMK3,
+    display_id: c_uint,
+    x: c_uint,
+    y: c_uint,
+    width: c_uint,
+    height: c_uint,
+    rgb888_data: *const u8,
+    data_len: c_uint,
+) -> c_int {
+    if device.is_null() || rgb888_data.is_null() {
+        return MK3_ERROR_NULL_POINTER;
+    }
+
+    if display_id > 1 || x > 479 || y > 271 || width == 0 || height == 0 {
+        return MK3_ERROR_INVALID_PARAMETER;
+    }
+
+    let expected_size = (width * height * 3) as usize;
+    if data_len as usize != expected_size {
+        return MK3_ERROR_INVALID_PARAMETER;
+    }
+
+    let device = &mut *device;
+    let data = slice::from_raw_parts(rgb888_data, data_len as usize);
+
+    match device.write_display_region_rgb888(
+        display_id as u8,
+        x as u16,
+        y as u16,
+        width as u16,
+        height as u16,
+        data
+    ) {
+        Ok(_) => MK3_SUCCESS,
+        Err(_) => MK3_ERROR_COMMUNICATION,
+    }
+}
+
+/// Writes an RGB888 framebuffer to the display (with automatic conversion).
+///
+/// This is a convenience function for full-screen updates using standard RGB888 format.
+///
+/// # Parameters
+/// - `device`: Device instance pointer
+/// - `display_id`: Display ID (0 = Left display, 1 = Right display)
+/// - `rgb888_data`: Pointer to RGB888 framebuffer (480 × 272 × 3 = 391,680 bytes)
+/// - `data_len`: Length of the data buffer (must be 391,680)
+///
+/// # Returns
+/// - `MK3_SUCCESS` on success
+/// - `MK3_ERROR_NULL_POINTER` if device or rgb888_data is NULL
+/// - `MK3_ERROR_INVALID_PARAMETER` if display_id > 1 or data_len is incorrect
+/// - `MK3_ERROR_COMMUNICATION` on USB communication error
+///
+/// # Safety
+/// - `device` must be a valid device pointer
+/// - `rgb888_data` must point to valid RGB888 data of the specified length
+#[no_mangle]
+pub unsafe extern "C" fn mk3_write_display_rgb888(
+    device: *mut MaschineMK3,
+    display_id: c_uint,
+    rgb888_data: *const u8,
+    data_len: c_uint,
+) -> c_int {
+    if device.is_null() || rgb888_data.is_null() {
+        return MK3_ERROR_NULL_POINTER;
+    }
+
+    if display_id > 1 {
+        return MK3_ERROR_INVALID_PARAMETER;
+    }
+
+    const EXPECTED_SIZE: usize = 480 * 272 * 3;
+    if data_len as usize != EXPECTED_SIZE {
+        return MK3_ERROR_INVALID_PARAMETER;
+    }
+
+    let device = &mut *device;
+    let data = slice::from_raw_parts(rgb888_data, data_len as usize);
+
+    match device.write_display_framebuffer_rgb888(display_id as u8, data) {
+        Ok(_) => MK3_SUCCESS,
+        Err(_) => MK3_ERROR_COMMUNICATION,
+    }
+}
+
+/// Writes an RGB888 framebuffer with dirty region detection.
+///
+/// This function tracks the display state and only sends the minimal rectangular
+/// region containing all changed pixels. Significantly reduces USB bandwidth for
+/// incremental updates (e.g., UI animations, partial screen changes).
+///
+/// # Parameters
+/// - `device`: Device instance pointer
+/// - `display_id`: Display ID (0 = Left display, 1 = Right display)
+/// - `rgb888_data`: Pointer to RGB888 framebuffer (480 × 272 × 3 = 391,680 bytes)
+/// - `data_len`: Length of the data buffer (must be 391,680)
+///
+/// # Returns
+/// - `MK3_SUCCESS` on success (includes case where no changes detected)
+/// - `MK3_ERROR_NULL_POINTER` if device or rgb888_data is NULL
+/// - `MK3_ERROR_INVALID_PARAMETER` if display_id > 1 or data_len is incorrect
+/// - `MK3_ERROR_COMMUNICATION` on USB communication error
+///
+/// # Performance
+/// - First call: Sends full screen and saves state (~33ms)
+/// - No changes: Skips USB transfer entirely (~0ms)
+/// - Small changes: Sends only dirty rectangle (proportional to changed area)
+///
+/// # Example Performance
+/// For a 100×100 pixel region change:
+/// - Without dirty detection: 33ms (full screen)
+/// - With dirty detection: ~2-3ms (only changed region)
+///
+/// # Safety
+/// - `device` must be a valid device pointer
+/// - `rgb888_data` must point to valid RGB888 data of the specified length
+#[no_mangle]
+pub unsafe extern "C" fn mk3_write_display_rgb888_dirty(
+    device: *mut MaschineMK3,
+    display_id: c_uint,
+    rgb888_data: *const u8,
+    data_len: c_uint,
+) -> c_int {
+    if device.is_null() || rgb888_data.is_null() {
+        return MK3_ERROR_NULL_POINTER;
+    }
+
+    if display_id > 1 {
+        return MK3_ERROR_INVALID_PARAMETER;
+    }
+
+    const EXPECTED_SIZE: usize = 480 * 272 * 3;
+    if data_len as usize != EXPECTED_SIZE {
+        return MK3_ERROR_INVALID_PARAMETER;
+    }
+
+    let device = &mut *device;
+    let data = slice::from_raw_parts(rgb888_data, data_len as usize);
+
+    match device.write_display_framebuffer_rgb888_dirty(display_id as u8, data) {
+        Ok(_) => MK3_SUCCESS,
+        Err(_) => MK3_ERROR_COMMUNICATION,
+    }
+}
+
 /// Flushes pending LED state changes to the device.
 ///
 /// # Parameters
